@@ -68,7 +68,7 @@ function showApp() {
 const MENU = [
   { group: '总览', items: [{ id: 'dashboard', label: '概览', roles: ['admin', 'inout', 'packer', 'finance'] }] },
   { group: '基础数据', items: [
-    { id: 'materials', label: '物料档案', roles: ['admin', 'inout', 'packer', 'finance'] },
+    { id: 'categories', label: '原料大类', roles: ['admin', 'inout', 'packer', 'finance'] },
     { id: 'partners', label: '供应商 / 客户', roles: ['admin', 'inout', 'packer', 'finance'] },
   ] },
   { group: '入库', items: [
@@ -99,7 +99,7 @@ window.navigate = navigate;
 
 const VIEW_META = {
   dashboard: ['总览', '概览'],
-  materials: ['基础数据', '物料档案'],
+  categories: ['基础数据', '原料大类'],
   partners: ['基础数据', '供应商 / 客户'],
   'in-purchase': ['入库', '原料入库'],
   'in-finish': ['入库', '成品入库'],
@@ -120,7 +120,7 @@ async function navigate(id) {
   view.innerHTML = '<div class="hint">加载中…</div>';
   try {
     if (id === 'dashboard') return renderDashboard(view);
-    if (id === 'materials') return renderMaterials(view);
+    if (id === 'categories') return renderCategories(view);
     if (id === 'partners') return renderPartners(view);
     if (id === 'stock') return renderStock(view);
     if (id === 'flow') return renderFlow(view);
@@ -155,27 +155,55 @@ async function renderDashboard(view) {
     <div class="card"><b>审批链：</b> 出入库管理员制单 → 提交 → 财务审核（库存变动）→ 成品出库由打包出货管理员打包确认。</div>`;
 }
 
-// ===== 物料 =====
-async function renderMaterials(view) {
-  const list = await api('GET', '/materials');
-  const canEdit = ['admin', 'inout'].includes(state.user.role);
-  view.innerHTML = `
-    <div class="toolbar">
-      <span class="grow"></span>
-      ${canEdit ? '<button class="btn btn-primary btn-sm" onclick="openMaterialModal()">+ 新增物料</button>' : ''}
-    </div>
-    <div class="card" style="padding:0">
-      <table><thead><tr><th>编码</th><th>名称</th><th>规格</th><th>类型</th><th>单位</th><th>安全库存</th><th>参考价</th></tr></thead>
-      <tbody>${list.map((m) => `<tr><td>${esc(m.code)}</td><td>${esc(m.name)}</td><td>${esc(m.spec)}</td><td>${m.type === 'raw' ? '原料' : '成品'}</td><td>${esc(m.unit)}</td><td>${fmt(m.safety_stock)}</td><td>${fmt(m.ref_price)}</td></tr>`).join('')}</tbody></table>
-    </div>`;
+// ===== 原料大类 / 成品物料（档案页）=====
+async function renderCategories(view) {
+  let tab = window._catTab || 'raw';
+  const draw = async () => {
+    const canEdit = ['admin', 'inout'].includes(state.user.role);
+    const tabBar = `<div class="tabs"><button class="tab ${tab === 'raw' ? 'active' : ''}" onclick="switchCatTab('raw')">原料大类</button><button class="tab ${tab === 'fg' ? 'active' : ''}" onclick="switchCatTab('fg')">成品物料</button></div>`;
+    if (tab === 'raw') {
+      const list = await api('GET', '/categories');
+      view.innerHTML = `
+        ${tabBar}
+        <div class="toolbar"><span class="grow"></span>${canEdit ? '<button class="btn btn-primary btn-sm" onclick="openCategoryModal()">+ 新增大类</button>' : ''}</div>
+        <div class="card" style="padding:0"><table><thead><tr><th>编号</th><th>大类名称</th><th>规格</th><th>操作</th></tr></thead>
+        <tbody>${list.length ? list.map((c) => `<tr><td>${esc(c.code)}</td><td>${esc(c.name)}</td><td>${esc(c.spec)}</td><td>${canEdit ? `<button class="btn btn-sm btn-danger" onclick="deleteCategory(${c.id})">删除</button>` : '-'}</td></tr>`).join('') : '<tr><td colspan="4" style="color:var(--text-3)">暂无大类，点击右上角新增（编号将自动生成）</td></tr>'}</tbody></table></div>`;
+    } else {
+      const list = await api('GET', '/materials');
+      view.innerHTML = `
+        ${tabBar}
+        <div class="toolbar"><span class="grow"></span>${canEdit ? '<button class="btn btn-primary btn-sm" onclick="openMaterialModal()">+ 新增物料</button>' : ''}</div>
+        <div class="card" style="padding:0"><table><thead><tr><th>编码</th><th>名称</th><th>规格</th><th>类型</th><th>单位</th><th>安全库存</th><th>参考价</th></tr></thead>
+        <tbody>${list.map((m) => `<tr><td>${esc(m.code)}</td><td>${esc(m.name)}</td><td>${esc(m.spec)}</td><td>${m.type === 'raw' ? '原料' : '成品'}</td><td>${esc(m.unit)}</td><td>${fmt(m.safety_stock)}</td><td>${fmt(m.ref_price)}</td></tr>`).join('')}</tbody></table></div>`;
+    }
+  };
+  window.switchCatTab = async function (t) { window._catTab = t; tab = t; await draw(); };
+  await draw();
 }
+window.openCategoryModal = async function () {
+  openModal(`<h3>新增原料大类</h3>
+    <div class="field"><label>大类名称</label><input id="c_name" placeholder="如：金属板材"></div>
+    <div class="field"><label>规格</label><input id="c_spec" placeholder="如：1.2mm"></div>
+    <div class="hint">编号将在保存后自动生成（RC0001 起）</div>
+    <div class="toolbar"><span class="grow"></span><button class="btn" onclick="closeModal()">取消</button><button class="btn btn-primary" onclick="saveCategory()">保存</button></div>`);
+};
+window.saveCategory = async function () {
+  try {
+    await api('POST', '/categories', { name: val('c_name'), spec: val('c_spec') });
+    closeModal(); navigate('categories');
+  } catch (e) { modalMsg(e.message); }
+};
+window.deleteCategory = async function (id) {
+  if (!confirm('确认删除该大类？')) return;
+  try { await api('DELETE', '/categories/' + id); navigate('categories'); } catch (e) { alert(e.message); }
+};
 window.openMaterialModal = async function () {
   openModal(`<h3>新增物料</h3>
     <div class="field"><label>编码</label><input id="m_code"></div>
     <div class="field"><label>名称</label><input id="m_name"></div>
     <div class="field"><label>规格</label><input id="m_spec"></div>
     <div class="row">
-      <div class="field"><label>类型</label><select id="m_type"><option value="raw">原料</option><option value="finished">成品</option></select></div>
+      <div class="field"><label>类型</label><select id="m_type"><option value="finished" selected>成品</option><option value="raw">原料</option></select></div>
       <div class="field"><label>单位</label><input id="m_unit"></div>
     </div>
     <div class="row">
@@ -246,8 +274,8 @@ function orderRow(o, kind, isOutbound) {
 window.viewItems = async function (kind, id) {
   const items = await api('GET', `/${kind}/${id}/items`);
   openModal(`<h3>单据明细</h3>
-    <table><thead><tr><th>物料编码</th><th>名称</th><th>单位</th><th>数量</th><th>单价</th><th>金额</th></tr></thead>
-    <tbody>${items.map((i) => `<tr><td>${esc(i.material_code)}</td><td>${esc(i.material_name)}</td><td>${esc(i.unit)}</td><td>${fmt(i.qty)}</td><td>${fmt(i.unit_price)}</td><td>${fmt(i.amount)}</td></tr>`).join('')}</tbody></table>
+    <table><thead><tr><th>编码</th><th>名称</th><th>单位</th><th>数量</th><th>单价</th><th>金额</th><th>生产日期</th><th>有效期</th></tr></thead>
+    <tbody>${items.map((i) => `<tr><td>${esc(i.material_code)}</td><td>${esc(i.material_name)}</td><td>${esc(i.unit)}</td><td>${fmt(i.qty)}</td><td>${fmt(i.unit_price)}</td><td>${fmt(i.amount)}</td><td>${i.production_date || '-'}</td><td>${i.expiry_date || '-'}</td></tr>`).join('')}</tbody></table>
     <div class="toolbar"><span class="grow"></span><button class="btn" onclick="closeModal()">关闭</button></div>`);
 };
 
@@ -269,15 +297,24 @@ function currentView() { return _curView; }
 
 // 新建单据弹窗
 let _matOptsCache = '';
+let _catOptsCache = '';
+let _rawMode = false;
 window.openOrderModal = async function (kind, type) {
-  const materials = await api('GET', '/materials');
-  const isPurchase = type === 'purchase';
-  const isSale = type === 'sale';
+  _rawMode = type === 'purchase';
   let partnerOpts = '';
-  if (isPurchase || type === 'prod_return') { const s = await api('GET', '/partners/suppliers'); partnerOpts = s.map((x) => `<option value="${x.id}">${esc(x.name)}</option>`).join(''); }
-  if (isSale || type === 'pick') { const c = await api('GET', '/partners/customers'); partnerOpts = c.map((x) => `<option value="${x.id}">${esc(x.name)}</option>`).join(''); }
-  _matOptsCache = materials.map((m) => `<option value="${m.id}" data-unit="${esc(m.unit)}" data-price="${m.ref_price ?? 0}">${esc(m.code)} ${esc(m.name)}</option>`).join('');
-  openModal(`<h3>新建${TYPE_LABEL[type] || ''}单</h3>
+  if (type === 'purchase' || type === 'prod_return') { const s = await api('GET', '/partners/suppliers'); partnerOpts = s.map((x) => `<option value="${x.id}">${esc(x.name)}</option>`).join(''); }
+  if (type === 'sale' || type === 'pick') { const c = await api('GET', '/partners/customers'); partnerOpts = c.map((x) => `<option value="${x.id}">${esc(x.name)}</option>`).join(''); }
+  if (_rawMode) {
+    const cats = await api('GET', '/categories');
+    _catOptsCache = cats.length
+      ? cats.map((c) => `<option value="${c.id}">${esc(c.code)} ${esc(c.name)}</option>`).join('')
+      : '<option value="" disabled>请先在「原料大类」中维护</option>';
+  } else {
+    const materials = await api('GET', '/materials');
+    _matOptsCache = materials.map((m) => `<option value="${m.id}" data-unit="${esc(m.unit)}" data-price="${m.ref_price ?? 0}">${esc(m.code)} ${esc(m.name)}</option>`).join('');
+  }
+  const tip = _rawMode ? '（选大类 + 自定义原料名称，编号/批次自动生成）' : '';
+  openModal(`<h3>新建${TYPE_LABEL[type] || ''}单 ${tip}</h3>
     ${partnerOpts ? `<div class="field"><label>往来单位</label><select id="o_partner">${partnerOpts}</select></div>` : ''}
     <div class="field"><label>备注</label><input id="o_remark"></div>
     <div id="o_items"></div>
@@ -288,18 +325,35 @@ window.openOrderModal = async function (kind, type) {
 window.addItemRow = function () {
   const box = document.getElementById('o_items');
   const div = document.createElement('div');
-  div.className = 'item-row';
-  div.innerHTML = `<select class="m">${_matOptsCache || '<option value="" disabled selected>暂无物料，请先在「物料档案」中维护</option>'}</select><input class="q" type="number" placeholder="数量" style="max-width:90px"><input class="p" type="number" placeholder="单价" style="max-width:90px"><button class="btn btn-sm btn-danger" onclick="this.parentNode.remove()">×</button>`;
+  div.className = 'item-row' + (_rawMode ? ' raw' : '');
+  if (_rawMode) {
+    div.innerHTML = `<select class="cat">${_catOptsCache}</select><input class="mn" placeholder="原料名称(自定义)"><span class="code-preview">编号自动生成</span><input class="pd" type="date" title="生产日期"><input class="ed" type="date" title="有效期"><input class="u" placeholder="单位" style="max-width:64px"><input class="q" type="number" placeholder="数量" style="max-width:72px"><input class="p" type="number" placeholder="单价" style="max-width:72px"><button class="btn btn-sm btn-danger" onclick="this.parentNode.remove()">×</button>`;
+  } else {
+    div.innerHTML = `<select class="m">${_matOptsCache || '<option value="" disabled selected>暂无物料，请先在「成品物料」中维护</option>'}</select><input class="q" type="number" placeholder="数量" style="max-width:90px"><input class="p" type="number" placeholder="单价" style="max-width:90px"><button class="btn btn-sm btn-danger" onclick="this.parentNode.remove()">×</button>`;
+  }
   box.appendChild(div);
 };
 window.saveOrder = async function (kind, type) {
   const rows = [...document.querySelectorAll('#o_items .item-row')];
-  const items = rows.map((r) => {
-    const sel = r.querySelector('.m');
-    const opt = sel.selectedOptions[0];
-    return { material_id: Number(sel.value), qty: Number(r.querySelector('.q').value), unit_price: Number(r.querySelector('.p').value || opt.dataset.price || 0) };
-  }).filter((i) => i.material_id && i.qty > 0);
-  if (!items.length) return modalMsg('请至少添加一条有效明细');
+  let items;
+  if (_rawMode) {
+    items = rows.map((r) => ({
+      category_id: Number(r.querySelector('.cat').value),
+      material_name: r.querySelector('.mn').value.trim(),
+      production_date: r.querySelector('.pd').value || null,
+      expiry_date: r.querySelector('.ed').value || null,
+      unit: r.querySelector('.u').value.trim() || null,
+      qty: Number(r.querySelector('.q').value),
+      unit_price: Number(r.querySelector('.p').value || 0),
+    })).filter((i) => i.category_id && i.material_name && i.qty > 0);
+  } else {
+    items = rows.map((r) => {
+      const sel = r.querySelector('.m');
+      const opt = sel.selectedOptions[0];
+      return { material_id: Number(sel.value), qty: Number(r.querySelector('.q').value), unit_price: Number(r.querySelector('.p').value || opt.dataset.price || 0) };
+    }).filter((i) => i.material_id && i.qty > 0);
+  }
+  if (!items.length) return modalMsg('请至少添加一条有效明细（原料需选大类并填名称）');
   const body = { type, items, remark: val('o_remark') || '' };
   if (document.getElementById('o_partner')) {
     if (type === 'purchase' || type === 'prod_return') body.supplier_id = Number(val('o_partner'));
@@ -314,8 +368,8 @@ window.saveOrder = async function (kind, type) {
 // ===== 库存 / 流水 =====
 async function renderStock(view) {
   const list = await api('GET', '/stock');
-  view.innerHTML = `<div class="card" style="padding:0"><table><thead><tr><th>编码</th><th>名称</th><th>类型</th><th>单位</th><th>当前库存</th><th>金额</th><th>安全库存</th><th>预警</th></tr></thead>
-    <tbody>${list.map((s) => `<tr><td>${esc(s.code)}</td><td>${esc(s.name)}</td><td>${s.type === 'raw' ? '原料' : '成品'}</td><td>${esc(s.unit)}</td><td>${fmt(s.qty)}</td><td>${fmt(s.amount)}</td><td>${fmt(s.safety_stock)}</td><td>${s.low_stock ? '<span class="tag tag-low">低于安全库存</span>' : '-'}</td></tr>`).join('')}</tbody></table></div>`;
+  view.innerHTML = `<div class="card" style="padding:0"><table><thead><tr><th>编码</th><th>名称</th><th>类型</th><th>单位</th><th>当前库存</th><th>金额</th><th>安全库存</th><th>效期(生产/有效)</th><th>预警</th></tr></thead>
+    <tbody>${list.map((s) => `<tr><td>${esc(s.code)}</td><td>${esc(s.name)}</td><td>${s.kind === 'raw' ? '原料(批次)' : (s.type === 'raw' ? '原料' : '成品')}</td><td>${esc(s.unit)}</td><td>${fmt(s.qty)}</td><td>${fmt(s.amount)}</td><td>${s.kind === 'raw' ? '-' : fmt(s.safety_stock)}</td><td>${s.kind === 'raw' ? `${s.production_date || '-'} / ${s.expiry_date || '-'}` : '-'}</td><td>${s.low_stock ? '<span class="tag tag-low">低于安全库存</span>' : '-'}</td></tr>`).join('')}</tbody></table></div>`;
 }
 async function renderFlow(view) {
   const list = await api('GET', '/stock/flow');

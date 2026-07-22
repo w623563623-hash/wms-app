@@ -8,6 +8,7 @@ import partnerRoutes from './routes/partners.js';
 import inboundRoutes from './routes/inbound.js';
 import outboundRoutes from './routes/outbound.js';
 import stockRoutes from './routes/stock.js';
+import categoryRoutes from './routes/categories.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -23,6 +24,7 @@ app.use('/api/partners', partnerRoutes);
 app.use('/api/inbound', inboundRoutes);
 app.use('/api/outbound', outboundRoutes);
 app.use('/api/stock', stockRoutes);
+app.use('/api/categories', categoryRoutes);
 
 // 静态前端
 app.use(express.static(path.join(__dirname, '..', 'public')));

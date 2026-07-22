@@ -6,6 +6,16 @@ import { genOrderNo, applyInboundAudit } from '../service/inventory.js';
 const router = Router();
 router.use(authMiddleware);
 
+// 原料编号：RM + 日期 + 4 位随机（保存时由服务端权威生成）
+function genRawMaterialCode() {
+  const d = new Date();
+  const ymd = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(
+    d.getDate()
+  ).padStart(2, '0')}`;
+  const rnd = String(Math.floor(Math.random() * 10000)).padStart(4, '0');
+  return `RM${ymd}${rnd}`;
+}
+
 // 入库单列表（含往来单位名称）
 router.get('/', async (req, res) => {
   try {
@@ -21,12 +31,18 @@ router.get('/', async (req, res) => {
   }
 });
 
-// 入库单明细
+// 入库单明细（兼容原料批次与成品物料）
 router.get('/:id/items', async (req, res) => {
   try {
     const [rows] = await pool.query(
-      `SELECT i.*, m.name AS material_name, m.code AS material_code, m.unit
-       FROM inbound_item i JOIN material m ON i.material_id = m.id
+      `SELECT i.*,
+              COALESCE(i.material_name, m.name) AS material_name,
+              COALESCE(i.material_code, m.code) AS material_code,
+              COALESCE(i.unit, m.unit) AS unit,
+              cat.name AS category_name, cat.code AS category_code
+       FROM inbound_item i
+       LEFT JOIN material m ON i.material_id = m.id
+       LEFT JOIN raw_category cat ON i.category_id = cat.id
        WHERE i.order_id = ?`,
       [req.params.id]
     );
@@ -71,11 +87,42 @@ router.post('/', requireRole('inout', 'admin'), async (req, res) => {
       ]
     );
     for (const it of items) {
-      await conn.query(
-        `INSERT INTO inbound_item (order_id, material_id, qty, unit_price, amount, remark)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-        [r.insertId, it.material_id, it.qty, it.unit_price, it.amount, it.remark || null]
-      );
+      // 原料批次：选大类 + 自定义名称，编号服务端生成
+      if (it.category_id) {
+        if (!it.material_name || it.qty <= 0) {
+          await conn.rollback();
+          return res.status(400).json({ error: '原料明细需填写大类、原料名称与数量' });
+        }
+        await conn.query(
+          `INSERT INTO inbound_item
+            (order_id, category_id, material_name, material_code, unit, qty, unit_price, amount, production_date, expiry_date, remark)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            r.insertId,
+            it.category_id,
+            it.material_name,
+            genRawMaterialCode(),
+            it.unit || null,
+            it.qty,
+            it.unit_price,
+            it.amount,
+            it.production_date || null,
+            it.expiry_date || null,
+            it.remark || null,
+          ]
+        );
+      } else {
+        // 成品物料：沿用既有 material_id
+        if (!it.material_id || it.qty <= 0) {
+          await conn.rollback();
+          return res.status(400).json({ error: '成品明细需选择物料并填写数量' });
+        }
+        await conn.query(
+          `INSERT INTO inbound_item (order_id, material_id, qty, unit_price, amount, remark)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+          [r.insertId, it.material_id, it.qty, it.unit_price, it.amount, it.remark || null]
+        );
+      }
     }
     await conn.commit();
     res.json({ id: r.insertId, order_no: orderNo });

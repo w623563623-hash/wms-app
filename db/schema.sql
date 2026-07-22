@@ -141,14 +141,20 @@ CREATE TABLE IF NOT EXISTS `inbound_item` (
   `id` BIGINT PRIMARY KEY AUTO_INCREMENT,
   `_openid` VARCHAR(64) DEFAULT '' NOT NULL,
   `order_id` BIGINT NOT NULL,
-  `material_id` BIGINT NOT NULL,
+  `material_id` BIGINT DEFAULT NULL COMMENT '成品物料（原料批次时为空）',
+  `category_id` BIGINT DEFAULT NULL COMMENT '原料大类（成品物料时为空）',
+  `material_name` VARCHAR(100) DEFAULT NULL COMMENT '原料自定义名称',
+  `material_code` VARCHAR(32) DEFAULT NULL COMMENT '原料自动编号',
+  `production_date` DATE DEFAULT NULL,
+  `expiry_date` DATE DEFAULT NULL,
+  `unit` VARCHAR(10) DEFAULT NULL,
   `qty` DECIMAL(18,3) NOT NULL,
   `unit_price` DECIMAL(18,2) DEFAULT 0,
   `amount` DECIMAL(18,2) DEFAULT 0,
   `remark` VARCHAR(255) DEFAULT NULL,
   CONSTRAINT `fk_in_item_order` FOREIGN KEY (`order_id`) REFERENCES `inbound_order`(`id`),
   CONSTRAINT `fk_in_item_material` FOREIGN KEY (`material_id`) REFERENCES `material`(`id`)
-) COMMENT='入库单明细';
+) COMMENT='入库单明细(原料批次+成品物料)';
 
 CREATE TABLE IF NOT EXISTS `outbound_item` (
   `id` BIGINT PRIMARY KEY AUTO_INCREMENT,
@@ -162,3 +168,49 @@ CREATE TABLE IF NOT EXISTS `outbound_item` (
   CONSTRAINT `fk_out_item_order` FOREIGN KEY (`order_id`) REFERENCES `outbound_order`(`id`),
   CONSTRAINT `fk_out_item_material` FOREIGN KEY (`material_id`) REFERENCES `material`(`id`)
 ) COMMENT='出库单明细';
+
+-- ===== 原料大类 / 原料批次（2026-07 新增）=====
+CREATE TABLE IF NOT EXISTS `raw_category` (
+  `id` BIGINT PRIMARY KEY AUTO_INCREMENT,
+  `code` VARCHAR(32) NOT NULL,
+  `name` VARCHAR(100) NOT NULL,
+  `spec` VARCHAR(100) DEFAULT NULL,
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY `uk_code` (`code`)
+) COMMENT='原料大类(简化档案:编号/名称/规格)';
+
+CREATE TABLE IF NOT EXISTS `raw_stock_batch` (
+  `id` BIGINT PRIMARY KEY AUTO_INCREMENT,
+  `category_id` BIGINT DEFAULT NULL,
+  `material_name` VARCHAR(100) NOT NULL,
+  `material_code` VARCHAR(32) DEFAULT NULL,
+  `unit` VARCHAR(10) DEFAULT NULL,
+  `production_date` DATE DEFAULT NULL,
+  `expiry_date` DATE DEFAULT NULL,
+  `qty` DECIMAL(18,3) DEFAULT 0,
+  `amount` DECIMAL(18,2) DEFAULT 0,
+  `inbound_order_id` BIGINT DEFAULT NULL,
+  `inbound_item_id` BIGINT DEFAULT NULL,
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY `uk_batch` (`category_id`, `material_name`, `production_date`, `expiry_date`),
+  KEY `idx_cat` (`category_id`)
+) COMMENT='原料批次库存(按大类+名称+生产/有效期批次)';
+
+CREATE TABLE IF NOT EXISTS `raw_stock_flow` (
+  `id` BIGINT PRIMARY KEY AUTO_INCREMENT,
+  `order_no` VARCHAR(32) DEFAULT NULL,
+  `biz_type` VARCHAR(10) DEFAULT NULL,
+  `category_id` BIGINT DEFAULT NULL,
+  `material_name` VARCHAR(100) DEFAULT NULL,
+  `material_code` VARCHAR(32) DEFAULT NULL,
+  `change_qty` DECIMAL(18,3) DEFAULT 0,
+  `change_amount` DECIMAL(18,2) DEFAULT 0,
+  `balance_qty` DECIMAL(18,3) DEFAULT 0,
+  `balance_amount` DECIMAL(18,2) DEFAULT 0,
+  `production_date` DATE DEFAULT NULL,
+  `expiry_date` DATE DEFAULT NULL,
+  `operator_id` BIGINT DEFAULT NULL,
+  `operator_name` VARCHAR(50) DEFAULT NULL,
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  KEY `idx_order` (`order_no`)
+) COMMENT='原料批次库存变动流水';

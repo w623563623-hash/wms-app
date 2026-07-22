@@ -142,3 +142,16 @@ tr:hover td { background: #FAFBFF; }
 .kpi .num { font-size: 24px; font-weight: 600; color: var(--brand); }
 .kpi .lbl { color: var(--text-3); font-size: 12px; margin-top: 4px; }
 .hidden { display: none !important; }
+
+/* 档案页 tab 切换 */
+.tabs { display: flex; gap: 4px; margin-bottom: 12px; }
+.tabs .tab { border: 1px solid var(--border); background: #fff; color: var(--text-2); padding: 6px 16px; border-radius: 4px; cursor: pointer; font-size: 13px; }
+.tabs .tab.active { background: var(--brand); border-color: var(--brand); color: #fff; }
+
+/* 原料批次明细行（多字段栅格） */
+.item-row.raw { flex-wrap: wrap; }
+.item-row.raw select { flex: 1 1 120px; }
+.item-row.raw .mn { flex: 1 1 120px; }
+.item-row.raw .code-preview { color: var(--text-3); font-size: 12px; white-space: nowrap; padding: 0 6px; align-self: center; }
+.item-row.raw input[type="date"] { flex: 0 0 132px; }
+.item-row.raw .u, .item-row.raw .q, .item-row.raw .p { flex: 0 0 72px; }

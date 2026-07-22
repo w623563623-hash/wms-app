@@ -22,3 +22,9 @@ INSERT INTO `supplier` (`code`, `name`, `contact`, `phone`) VALUES
 INSERT INTO `customer` (`code`, `name`, `contact`, `phone`) VALUES
   ('CUS-001', '设备制造客户', '张总', '13900000001'),
   ('CUS-002', '海外贸易公司', 'Mary', '13900000002');
+
+-- 原料大类（编号由后端自动生成，这里仅示例）
+INSERT INTO `raw_category` (`code`, `name`, `spec`) VALUES
+  ('RC0001', '金属板材', '1.2mm'),
+  ('RC0002', '塑料粒子', 'PE'),
+  ('RC0003', '电子元件', 'SMD');

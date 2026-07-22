@@ -39,31 +39,36 @@ export function genOrderNo(prefix) {
 export async function applyInboundAudit(order, items, auditor) {
   return transaction(async (conn) => {
     for (const it of items) {
-      const [st] = await conn.query(
-        'SELECT qty, amount FROM stock WHERE material_id = ? FOR UPDATE',
-        [it.material_id]
-      );
-      const c = computeStock(st[0] || null, it, 'inbound');
-      await conn.query(
-        `INSERT INTO stock (material_id, qty, amount) VALUES (?, ?, ?)
-         ON DUPLICATE KEY UPDATE qty = VALUES(qty), amount = VALUES(amount)`,
-        [it.material_id, c.newQty, c.newAmt]
-      );
-      await conn.query(
-        `INSERT INTO stock_flow
-          (order_no, biz_type, material_id, change_qty, change_amount, balance_qty, balance_amount, operator_id, operator_name)
-         VALUES (?, 'inbound', ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          order.order_no,
-          it.material_id,
-          c.changeQty,
-          c.changeAmount,
-          c.balanceQty,
-          c.balanceAmount,
-          auditor.id,
-          auditor.real_name,
-        ]
-      );
+      if (it.category_id) {
+        // 原料批次：按批次独立记账
+        await applyRawBatch(conn, order, it, auditor);
+      } else {
+        const [st] = await conn.query(
+          'SELECT qty, amount FROM stock WHERE material_id = ? FOR UPDATE',
+          [it.material_id]
+        );
+        const c = computeStock(st[0] || null, it, 'inbound');
+        await conn.query(
+          `INSERT INTO stock (material_id, qty, amount) VALUES (?, ?, ?)
+           ON DUPLICATE KEY UPDATE qty = VALUES(qty), amount = VALUES(amount)`,
+          [it.material_id, c.newQty, c.newAmt]
+        );
+        await conn.query(
+          `INSERT INTO stock_flow
+            (order_no, biz_type, material_id, change_qty, change_amount, balance_qty, balance_amount, operator_id, operator_name)
+           VALUES (?, 'inbound', ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            order.order_no,
+            it.material_id,
+            c.changeQty,
+            c.changeAmount,
+            c.balanceQty,
+            c.balanceAmount,
+            auditor.id,
+            auditor.real_name,
+          ]
+        );
+      }
     }
     const [result] = await conn.query(
       "UPDATE inbound_order SET status = 'done', auditor_id = ?, audited_at = NOW() WHERE id = ? AND status = 'pending'",
@@ -71,6 +76,62 @@ export async function applyInboundAudit(order, items, auditor) {
     );
     if (result.affectedRows === 0) throw new Error('单据状态已变化，审核失败');
   });
+}
+
+// 原料批次审核入账：按 (大类, 名称, 生产日期, 有效期) 唯一键累加，并写批次流水
+async function applyRawBatch(conn, order, it, auditor) {
+  const changeQty = Number(it.qty);
+  const changeAmount = Number(it.amount ?? it.qty * (it.unit_price ?? 0));
+  const prod = it.production_date || null;
+  const exp = it.expiry_date || null;
+  // 行锁定位已有批次（NULL 安全比较）
+  const [existing] = await conn.query(
+    `SELECT qty, amount FROM raw_stock_batch
+     WHERE category_id <=> ? AND material_name = ? AND production_date <=> ? AND expiry_date <=> ?
+     FOR UPDATE`,
+    [it.category_id || null, it.material_name, prod, exp]
+  );
+  const prevQty = existing[0] ? Number(existing[0].qty) : 0;
+  const prevAmt = existing[0] ? Number(existing[0].amount) : 0;
+  const newQty = prevQty + changeQty;
+  const newAmt = prevAmt + changeAmount;
+  await conn.query(
+    `INSERT INTO raw_stock_batch
+      (category_id, material_name, material_code, unit, production_date, expiry_date, qty, amount, inbound_order_id, inbound_item_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON DUPLICATE KEY UPDATE qty = VALUES(qty), amount = VALUES(amount)`,
+    [
+      it.category_id || null,
+      it.material_name,
+      it.material_code || null,
+      it.unit || null,
+      prod,
+      exp,
+      newQty,
+      newAmt,
+      order.id,
+      it.id,
+    ]
+  );
+  await conn.query(
+    `INSERT INTO raw_stock_flow
+      (order_no, biz_type, category_id, material_name, material_code, change_qty, change_amount, balance_qty, balance_amount, production_date, expiry_date, operator_id, operator_name)
+     VALUES (?, 'inbound', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      order.order_no,
+      it.category_id || null,
+      it.material_name,
+      it.material_code || null,
+      changeQty,
+      changeAmount,
+      newQty,
+      newAmt,
+      prod,
+      exp,
+      auditor.id,
+      auditor.real_name,
+    ]
+  );
 }
 
 // 出库审核通过：校验库存充足后扣减 + 写流水
