@@ -1,6 +1,6 @@
 # 云仓储 WMS · 出入库管理后台（最小可用系统 MVP）
 
-原料 / 成品的入库、出库、库存管理后台。4 角色线性审批（出入库管理员 → 财务审核 → 打包出货管理员），库存**仅在财务审核通过后**于事务内变动。
+原料 / 成品的入库、出库、库存管理后台。4 角色线性审批（系统管理员 → 出入库管理员 → 打包出货管理员 → 财务），库存**仅在财务审核通过后**于事务内变动。
 
 - 后端：Node + Express + MySQL（`mysql2`）
 - 前端：原生 JS 单页（腾讯云控制台 TDesign 风格）
@@ -28,6 +28,41 @@
 - 入库：库存 `+qty`，写 `stock_flow`。
 - 出库：`stock` 行锁 `FOR UPDATE` 防并发超卖；库存不足则整单回滚。
 - 库存仅由 `status='done'` 的审核动作触发，杜绝未确认改账。
+
+## 原料大类与原料批次管理
+
+原料侧采用「大类档案 + 批次明细」模型，与成品（沿用原物料 `material` 表）相互独立、互不干扰。
+
+### 数据模型
+
+| 表 | 说明 |
+|----|------|
+| `raw_category` | 原料大类档案：`code`（自动生成 `RC0001` 起）、`name`（大类名称）、`spec`（规格）。 |
+| `raw_stock_batch` | 原料批次库存，按 **`category_id + material_name + production_date + expiry_date`** 唯一键记账；字段含 `material_code`（自动生成 `RM+YYYYMMDD+4位随机`）、`qty`、`amount`、`incoming_date` 等。 |
+| `raw_stock_flow` | 原料批次流水，每笔含 `change_qty / change_amount / balance_qty / balance_amount`，结存可追溯。 |
+| `inbound_item` | 明细同时支持两种来源：成品走 `material_id`；原料走 `category_id + material_name`（自定义名称）+ `material_code`（自动）+ `production_date` + `expiry_date`，二者其一即可。 |
+
+> 迁移脚本 `src/migrate.js` 在 `server.js` 启动时**幂等**执行：自动建上述表、给 `inbound_item` 扩充列，并在 `raw_category` 为空时灌入 3 条示例大类（金属板材 / 塑料粒子 / 电子元件）。
+
+### 原料入库流程（前端：原料入库弹窗）
+
+1. 选择「原料大类」（下拉来自 `raw_category`）。
+2. 填写**自定义原料名称**（如「铜板A」），系统预览自动编号 `RM20260722XXXX`。
+3. 填数量、单价，以及**生产日期 / 有效期**（批次管理的关键字段）。
+4. 保存草稿 → 提交 → 财务审核通过。
+5. 审核时库存事务对原料明细走 `applyRawBatch`：按唯一批次键 upsert `raw_stock_batch`，并写 `raw_stock_flow`（含结存）。
+
+成品入库/出库逻辑完全不变（仍按 `material_id` 记账 `stock` / `stock_flow`）。实时库存、流水接口已合并成品与原料批次，并标注 `kind` 与有效期。
+
+### 相关 API
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/categories` | 原料大类列表 |
+| POST | `/api/categories` | 新建大类（自动生成 `RC####` 编号） |
+| DELETE | `/api/categories/:id` | 删除大类 |
+| POST | `/api/inbound` | 建单；明细 `items[].category_id` 或 `items[].material_id` 二选一 |
+
 
 ## 本地运行（docker-compose 一键起 MySQL）
 
