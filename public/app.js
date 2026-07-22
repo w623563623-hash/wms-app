@@ -268,6 +268,7 @@ window.packOrder = async function (id) {
 function currentView() { return _curView; }
 
 // 新建单据弹窗
+let _matOptsCache = '';
 window.openOrderModal = async function (kind, type) {
   const materials = await api('GET', '/materials');
   const isPurchase = type === 'purchase';
@@ -275,20 +276,20 @@ window.openOrderModal = async function (kind, type) {
   let partnerOpts = '';
   if (isPurchase || type === 'prod_return') { const s = await api('GET', '/partners/suppliers'); partnerOpts = s.map((x) => `<option value="${x.id}">${esc(x.name)}</option>`).join(''); }
   if (isSale || type === 'pick') { const c = await api('GET', '/partners/customers'); partnerOpts = c.map((x) => `<option value="${x.id}">${esc(x.name)}</option>`).join(''); }
-  const matOpts = materials.map((m) => `<option value="${m.id}" data-unit="${esc(m.unit)}" data-price="${m.ref_price ?? 0}">${esc(m.code)} ${esc(m.name)}</option>`).join('');
+  _matOptsCache = materials.map((m) => `<option value="${m.id}" data-unit="${esc(m.unit)}" data-price="${m.ref_price ?? 0}">${esc(m.code)} ${esc(m.name)}</option>`).join('');
   openModal(`<h3>新建${TYPE_LABEL[type] || ''}单</h3>
     ${partnerOpts ? `<div class="field"><label>往来单位</label><select id="o_partner">${partnerOpts}</select></div>` : ''}
     <div class="field"><label>备注</label><input id="o_remark"></div>
     <div id="o_items"></div>
-    <button class="btn btn-sm" onclick="addItemRow('${matOpts}')">+ 添加明细</button>
+    <button class="btn btn-sm" onclick="addItemRow()">+ 添加明细</button>
     <div class="toolbar"><span class="grow"></span><button class="btn" onclick="closeModal()">取消</button><button class="btn btn-primary" onclick="saveOrder('${kind}', '${type}')">保存草稿</button></div>`);
-  addItemRow(matOpts);
+  addItemRow();
 };
-window.addItemRow = function (matOpts) {
+window.addItemRow = function () {
   const box = document.getElementById('o_items');
   const div = document.createElement('div');
   div.className = 'item-row';
-  div.innerHTML = `<select class="m">${matOpts}</select><input class="q" type="number" placeholder="数量" style="max-width:90px"><input class="p" type="number" placeholder="单价" style="max-width:90px"><button class="btn btn-sm btn-danger" onclick="this.parentNode.remove()">×</button>`;
+  div.innerHTML = `<select class="m">${_matOptsCache || '<option value="" disabled selected>暂无物料，请先在「物料档案」中维护</option>'}</select><input class="q" type="number" placeholder="数量" style="max-width:90px"><input class="p" type="number" placeholder="单价" style="max-width:90px"><button class="btn btn-sm btn-danger" onclick="this.parentNode.remove()">×</button>`;
   box.appendChild(div);
 };
 window.saveOrder = async function (kind, type) {
