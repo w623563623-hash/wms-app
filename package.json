@@ -1,0 +1,19 @@
+{
+  "name": "wms-app",
+  "version": "1.0.0",
+  "description": "原料/成品出入库管理后台（轻量 WMS）—— 腾讯云 CloudBase MySQL 全栈 MVP",
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "test": "node test/inventory.test.mjs"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "jsonwebtoken": "^9.0.2",
+    "mysql2": "^3.11.0"
+  }
+}

@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>云仓储 WMS · 出入库管理后台</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <!-- 登录页 -->
+  <div id="login" class="login-wrap">
+    <div class="login-card">
+      <h2>云仓储 WMS</h2>
+      <p>原料 / 成品 出入库管理后台</p>
+      <div id="loginMsg"></div>
+      <div class="field">
+        <label>用户名</label>
+        <input id="username" placeholder="如 inout / finance / admin / packer" />
+      </div>
+      <div class="field">
+        <label>密码</label>
+        <input id="password" type="password" placeholder="默认密码 Wms@2026" />
+      </div>
+      <button class="btn btn-primary" style="width:100%" onclick="doLogin()">登录</button>
+      <div class="hint">演示账号：admin / inout / packer / finance，密码均为 Wms@2026</div>
+    </div>
+  </div>
+
+  <!-- 主框架 -->
+  <div id="app" class="hidden">
+    <div class="topbar">
+      <span class="logo">云仓储 WMS</span>
+      <span class="env">env: w2026</span>
+      <span class="spacer"></span>
+      <span class="who" id="who"></span>
+      <button class="btn btn-sm" onclick="doLogout()">退出</button>
+    </div>
+    <div class="layout">
+      <div class="sidebar" id="sidebar"></div>
+      <div class="content">
+        <div class="breadcrumb" id="breadcrumb"></div>
+        <h2 class="page-title" id="pageTitle"></h2>
+        <div id="view"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="modalRoot"></div>
+  <script src="./app.js"></script>
+</body>
+</html>

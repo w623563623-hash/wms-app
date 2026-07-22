@@ -1,0 +1,28 @@
+# 本地一键起 MySQL 8 + 自动建表与灌入示例数据
+# 用法： docker compose up -d
+# 然后 cp .env.example .env（DB_HOST=127.0.0.1 / DB_USER=root / DB_PASSWORD=wms123456 / DB_NAME=wms）
+#      npm install && npm start
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: wms-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: wms123456
+      MYSQL_DATABASE: wms
+      TZ: Asia/Shanghai
+    ports:
+      - "3306:3306"
+    command: --default-authentication-plugin=mysql_native_password --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - ./db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./db/seed.sql:/docker-entrypoint-initdb.d/02-seed.sql:ro
+      - wms-mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-pwms123456"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  wms-mysql-data:

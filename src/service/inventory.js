@@ -1,0 +1,115 @@
+import { pool, transaction } from '../db.js';
+
+/**
+ * 纯函数：根据当前库存 + 单据明细，计算审核通过后的库存结存与流水差额。
+ * 抽成纯函数是为了可单测（不依赖数据库）。
+ * @param {object|null} prev  当前 stock 行（无则 null）
+ * @param {object} item        单据明细 { qty, unit_price?, amount? }
+ * @param {'inbound'|'outbound'} bizType
+ */
+export function computeStock(prev, item, bizType) {
+  const prevQty = prev ? Number(prev.qty) : 0;
+  const prevAmt = prev ? Number(prev.amount) : 0;
+  const dq = Number(item.qty);
+  const damt = Number(item.amount ?? item.qty * (item.unit_price ?? 0));
+  const sign = bizType === 'inbound' ? 1 : -1;
+  const newQty = prevQty + sign * dq;
+  const newAmt = prevAmt + sign * damt;
+  return {
+    newQty,
+    newAmt,
+    balanceQty: newQty,
+    balanceAmount: newAmt,
+    changeQty: sign * dq,
+    changeAmount: sign * damt,
+  };
+}
+
+// 生成单据号：类型前缀 + 日期 + 4位随机
+export function genOrderNo(prefix) {
+  const d = new Date();
+  const ymd = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(
+    d.getDate()
+  ).padStart(2, '0')}`;
+  const rnd = String(Math.floor(Math.random() * 10000)).padStart(4, '0');
+  return `${prefix}${ymd}${rnd}`;
+}
+
+// 入库审核通过：事务内更新 stock + 写 stock_flow（行锁防并发超卖）
+export async function applyInboundAudit(order, items, auditor) {
+  return transaction(async (conn) => {
+    for (const it of items) {
+      const [st] = await conn.query(
+        'SELECT qty, amount FROM stock WHERE material_id = ? FOR UPDATE',
+        [it.material_id]
+      );
+      const c = computeStock(st[0] || null, it, 'inbound');
+      await conn.query(
+        `INSERT INTO stock (material_id, qty, amount) VALUES (?, ?, ?)
+         ON DUPLICATE KEY UPDATE qty = VALUES(qty), amount = VALUES(amount)`,
+        [it.material_id, c.newQty, c.newAmt]
+      );
+      await conn.query(
+        `INSERT INTO stock_flow
+          (order_no, biz_type, material_id, change_qty, change_amount, balance_qty, balance_amount, operator_id, operator_name)
+         VALUES (?, 'inbound', ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          order.order_no,
+          it.material_id,
+          c.changeQty,
+          c.changeAmount,
+          c.balanceQty,
+          c.balanceAmount,
+          auditor.id,
+          auditor.real_name,
+        ]
+      );
+    }
+    const [result] = await conn.query(
+      "UPDATE inbound_order SET status = 'done', auditor_id = ?, audited_at = NOW() WHERE id = ? AND status = 'pending'",
+      [auditor.id, order.id]
+    );
+    if (result.affectedRows === 0) throw new Error('单据状态已变化，审核失败');
+  });
+}
+
+// 出库审核通过：校验库存充足后扣减 + 写流水
+export async function applyOutboundAudit(order, items, auditor) {
+  return transaction(async (conn) => {
+    for (const it of items) {
+      const [st] = await conn.query(
+        'SELECT qty, amount FROM stock WHERE material_id = ? FOR UPDATE',
+        [it.material_id]
+      );
+      if (!st.length || Number(st[0].qty) < Number(it.qty)) {
+        throw new Error(`库存不足，物料 #${it.material_id} 当前库存 ${st[0] ? st[0].qty : 0}`);
+      }
+      const c = computeStock(st[0], it, 'outbound');
+      await conn.query('UPDATE stock SET qty = ?, amount = ? WHERE material_id = ?', [
+        c.newQty,
+        c.newAmt,
+        it.material_id,
+      ]);
+      await conn.query(
+        `INSERT INTO stock_flow
+          (order_no, biz_type, material_id, change_qty, change_amount, balance_qty, balance_amount, operator_id, operator_name)
+         VALUES (?, 'outbound', ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          order.order_no,
+          it.material_id,
+          c.changeQty,
+          c.changeAmount,
+          c.balanceQty,
+          c.balanceAmount,
+          auditor.id,
+          auditor.real_name,
+        ]
+      );
+    }
+    const [result] = await conn.query(
+      "UPDATE outbound_order SET status = 'done', auditor_id = ?, audited_at = NOW() WHERE id = ? AND status = 'pending'",
+      [auditor.id, order.id]
+    );
+    if (result.affectedRows === 0) throw new Error('单据状态已变化，审核失败');
+  });
+}
