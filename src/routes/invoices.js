@@ -72,6 +72,61 @@ router.post('/', requireRole('admin', 'finance', 'inout'), async (req, res) => {
   }
 });
 
+// 批量入账（报销单：一次传 PDF + 多行明细，循环插入）
+router.post('/batch', requireRole('admin', 'finance', 'inout'), async (req, res) => {
+  try {
+    const b = req.body || {};
+    if (!b.file) return res.status(400).json({ error: '缺少 PDF 文件' });
+    if (!Array.isArray(b.rows) || !b.rows.length) return res.status(400).json({ error: '无明细行' });
+
+    const conn = await pool.getConnection();
+    const ids = [];
+    try {
+      await conn.beginTransaction();
+      for (let i = 0; i < b.rows.length; i++) {
+        const row = b.rows[i];
+        if (!row.invoice_no) continue;
+        // 报销单 PDF 仅存首条，避免 34 行各存 6MB（约 200MB 事务风险）；其余行 file_data 为空
+        const fileData = i === 0 ? b.file : null;
+        const fileName = i === 0 ? (b.fileName || null) : null;
+        const [r] = await conn.query(
+          `INSERT INTO invoice (
+            invoice_no, invoice_type, invoice_kind,
+            billing_name, billing_tax_no, billing_unit_id, partner_type, partner_name,
+            expense_type, amount_ex_tax, tax_amount, amount_incl_tax, invoice_date,
+            file_data, file_name, status, confidence, confidence_level,
+            operator_id, operator_name
+          ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          [
+            row.invoice_no, row.invoice_type || 'purchase', row.invoice_kind || null,
+            row.billing_name || null, null, null, null, null,
+            row.expense_type || null, 0, 0, Number(row.amount_incl_tax) || 0,
+            row.invoice_date || null,
+            fileData, fileName, 'confirmed',
+            JSON.stringify({ source: 'reimbursement' }), 'low',
+            req.user.sub || req.user.id, req.user.real_name || req.user.username,
+          ]
+        );
+        await conn.query(
+          'INSERT INTO operation_log (user_id, user_name, action, target) VALUES (?,?,?,?)',
+          [req.user.sub || req.user.id, req.user.real_name || req.user.username, '批量导入报销单', row.invoice_no]
+        );
+        ids.push(r.insertId);
+      }
+      await conn.commit();
+      res.json({ inserted: ids.length, ids });
+    } catch (err) {
+      await conn.rollback();
+      throw err;
+    } finally {
+      conn.release();
+    }
+  } catch (err) {
+    console.error('[invoice/batch]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // 列表（筛选 + 统计）
 router.get('/', async (req, res) => {
   try {

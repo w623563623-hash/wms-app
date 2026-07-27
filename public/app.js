@@ -485,7 +485,7 @@ window.openUploadModal = async function () {
       <div onclick="document.getElementById('inv_file').click()" style="cursor:pointer;text-align:center;padding:24px">
         <div style="font-size:30px">📄</div>
         <div style="margin-top:6px">点击或拖拽 PDF 发票到此处</div>
-        <div class="sub">支持增值税电子发票 / 数电票 / 专票 / 普票</div>
+        <div class="sub">支持增值税电子发票 / 数电票 / 专票 / 普票 / 报销单汇总（自动识别明细批量入账）</div>
       </div>
     </div>
     <div id="inv_result" style="display:none"></div>
@@ -512,6 +512,11 @@ async function invReadFile(file) {
   drop.innerHTML = `<div style="padding:18px;text-align:center"><div class="loading">解析中…</div><div class="sub">${esc(file.name)} (${(file.size / 1024).toFixed(0)} KB)</div></div>`;
   try {
     const { result } = await api('POST', '/invoices/parse', { file: base64, fileName: file.name });
+    if (result.mode === 'reimbursement') {
+      window._invResult = result;
+      renderReimbResult(result);
+      return;
+    }
     window._invPartners = await api('GET', '/invoices/partners/all').catch(() => []);
     window._invBilling = { partner_id: result.billing.partner_id || null, partner_type: result.billing.partner_type || null, partner_name: result.billing.partner_name || null };
     renderInvResult(result);
@@ -528,6 +533,7 @@ function pendList(r, b) {
 
 function renderInvResult(r) {
   window._invResult = r;
+  if (r.mode === 'reimbursement') { renderReimbResult(r); return; }
   const el = document.getElementById('inv_result');
   el.style.display = 'block';
   const b = r.billing || {};
@@ -574,6 +580,58 @@ function renderInvResult(r) {
       </div>
     </div>`;
 }
+
+// 报销单批量识别结果视图
+const EXPENSE_TYPES = ['运输费', '业务招待费', '办公费', '服务费', '差旅费', '福利费', '广告费', '物业费', '仓储费', '维修费', '软件费', '通讯费', '油费', '其他'];
+function renderReimbResult(r) {
+  const el = document.getElementById('inv_result');
+  el.style.display = 'block';
+  const rows = r.rows || [];
+  const opts = (sel) => EXPENSE_TYPES.map((t) => `<option value="${t}" ${t === sel ? 'selected' : ''}>${t}</option>`).join('');
+  const body = rows.map((row) => `<tr>
+      <td class="num">${row.seq}</td>
+      <td><select id="exp_${row.seq}" class="inv-exp-sel">${opts(row.expense_type)}</select></td>
+      <td>${row.invoice_date || '-'}</td>
+      <td class="num">¥${fmtMoney(row.amount_incl_tax)}</td>
+      <td class="mono">${esc(row.invoice_no)}</td>
+    </tr>`).join('');
+  el.innerHTML = `<div class="inv-reimb">
+    <div class="inv-reimb-head">
+      <div><b>报销单识别成功</b> · 共 <b>${rows.length}</b> 条 · 合计 <b style="color:var(--success)">¥${fmtMoney(r.total)}</b></div>
+      <div class="sub">已自动识别费用类型，请核对后批量入账。报销单不含销售方/税额，入账后可在详情补充。</div>
+    </div>
+    <div class="card" style="padding:0"><table><thead><tr>
+      <th style="width:48px">#</th><th>费用类型</th><th>开票日期</th><th>金额</th><th>票据号码</th>
+    </tr></thead><tbody>${body}</tbody></table></div>
+    <div class="toolbar">
+      <span class="sub">原始凭证（报销单PDF）将附在首条记录</span>
+      <span class="grow"></span>
+      <button class="btn" onclick="closeModal()">取消</button>
+      <button class="btn btn-primary" onclick="saveReimbBatch()">批量入账（${rows.length} 条）</button>
+    </div>
+  </div>`;
+}
+window.saveReimbBatch = async function () {
+  const r = window._invResult;
+  if (!r || r.mode !== 'reimbursement') return;
+  const rows = (r.rows || []).map((row) => {
+    const sel = document.getElementById('exp_' + row.seq);
+    return {
+      invoice_no: row.invoice_no,
+      invoice_date: row.invoice_date,
+      expense_type: sel ? sel.value : row.expense_type,
+      amount_incl_tax: row.amount_incl_tax,
+      invoice_type: 'purchase',
+    };
+  });
+  const body = { file: window._invFile.base64, fileName: window._invFile.name, rows };
+  try {
+    const res = await api('POST', '/invoices/batch', body);
+    closeModal();
+    modalMsg(`已批量入账 ${res.inserted} 条`);
+    navigate('invoices');
+  } catch (e) { modalMsg(e.message); }
+};
 
 window.invBillingPick = function (v) {
   if (v === '__new') { invNewPartner(); return; }

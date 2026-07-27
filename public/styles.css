@@ -220,3 +220,11 @@ tr:hover td { background: #FAFBFF; }
 .inv-picklist .pick { padding: 10px 12px; border: 1px solid var(--border); border-radius: 4px; margin-bottom: 6px; cursor: pointer; }
 .inv-picklist .pick:hover { border-color: var(--brand); background: #ECF2FE; }
 .inv-picklist .pick .sub { color: var(--text-3); font-size: 11px; }
+
+/* 报销单批量识别 */
+.inv-reimb { padding-top: 4px; }
+.inv-reimb-head { margin-bottom: 10px; }
+.inv-reimb-head .sub { margin-top: 4px; }
+.inv-reimb table th, .inv-reimb table td { padding: 7px 10px; }
+.inv-reimb .inv-exp-sel { padding: 4px 6px; min-width: 120px; }
+.inv-reimb .mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; word-break: break-all; }

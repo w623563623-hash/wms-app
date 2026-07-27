@@ -154,6 +154,56 @@ function mapExpenseType(text) {
   return null;
 }
 
+// ===== 报销单明细解析（增强：支持"报销单汇总"PDF）=====
+// 报销单文字层格式：序号 + 费用类型 + 日期(YYYY年M月D日) + 金额(2位小数) + 票据号码(15~20位)
+// 少数行因排版换行断裂，故先合并换行再整体匹配
+function mapReimbExpenseType(raw) {
+  const map = {
+    '物流': '运输费',
+    '餐饮': '业务招待费',
+    '商品': '办公费',
+    '服务': '服务费',
+    '交通': '差旅费',
+    '住宿': '差旅费',
+    '医疗': '福利费',
+    '医药': '福利费',
+  };
+  return map[raw] || null;
+}
+
+export function extractReimbursementRows(text) {
+  // 合并所有换行，修复"11\n商品\n2026年...\n1122.32..."断裂行
+  const t = (text || '').replace(/\r/g, '').replace(/\n/g, '');
+  const types = '物流|餐饮|商品|服务|交通|住宿|医疗|医药';
+  // 金额用 \.\d{1,2} 限定 2 位小数，避免贪婪吞掉后续 20 位票据号
+  const re = new RegExp(
+    '(\\d{1,3})(' + types + ')(\\d{4}年\\d{1,2}月\\d{1,2}日)(\\d+\\.\\d{1,2})(\\d{15,20})',
+    'g'
+  );
+  const rows = [];
+  let m;
+  while ((m = re.exec(t)) !== null) {
+    const seq = parseInt(m[1], 10);
+    const expenseRaw = m[2];
+    const dateRaw = m[3];
+    const amount = cleanNum(m[4]);
+    const invoiceNo = m[5];
+    const dm = dateRaw.match(/(\d{4})年(\d{1,2})月(\d{1,2})日/);
+    const invoiceDate = dm
+      ? `${dm[1]}-${String(dm[2]).padStart(2, '0')}-${String(dm[3]).padStart(2, '0')}`
+      : null;
+    rows.push({
+      seq,
+      expense_type_raw: expenseRaw,
+      expense_type: mapReimbExpenseType(expenseRaw),
+      invoice_date: invoiceDate,
+      amount_incl_tax: amount,
+      invoice_no: invoiceNo,
+    });
+  }
+  return rows;
+}
+
 // ===== 4) 开票单位匹配 partner =====
 // partners: [{id, name, tax_no, type:'supplier'|'customer'}]
 export function matchPartner(name, taxNo, partners = []) {
@@ -192,6 +242,20 @@ export function matchPartner(name, taxNo, partners = []) {
 // 入参 base64 PDF；从 DB 查 partner 列表做匹配
 export async function analyzeInvoice(base64) {
   const text = await extractTextFromPdf(base64);
+
+  // 报销单模式优先：文字层含报销单表格且能提取到多条明细
+  const reimbRows = extractReimbursementRows(text);
+  if (reimbRows.length >= 2) {
+    const total = reimbRows.reduce((s, r) => s + (Number(r.amount_incl_tax) || 0), 0);
+    return {
+      mode: 'reimbursement',
+      count: reimbRows.length,
+      total: Math.round(total * 100) / 100,
+      rows: reimbRows,
+      raw_text: text.slice(0, 2000),
+    };
+  }
+
   const fields = extractInvoiceFields(text);
 
   // 拉取 partner 列表（supplier + customer 合并）
@@ -233,6 +297,7 @@ export async function analyzeInvoice(base64) {
         : 'low';
 
   return {
+    mode: 'invoice',
     raw_text: text.slice(0, 2000),
     invoice_no: { value: fields.invoice_no, confidence: fields.invoice_no ? 'high' : 'low' },
     invoice_date: { value: fields.invoice_date, confidence: fields.invoice_date ? 'high' : 'low' },
