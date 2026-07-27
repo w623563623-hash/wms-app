@@ -364,12 +364,13 @@ window.openOrderModal = async function (kind, type) {
       : '<option value="" disabled selected>暂无物料，请先在「成品物料」中维护</option>';
   }
   const tip = _itemMode === 'raw-category' ? '（选大类 + 自定义原料名称，编号/批次自动生成）' : _itemMode === 'raw-batch' ? '（从已入库原料批次中选择）' : '';
+  const modalCls = _itemMode === 'raw-category' ? 'wide' : '';
   openModal(`<h3>新建${TYPE_LABEL[type] || ''}单 ${tip}</h3>
     ${partnerOpts ? `<div class="field"><label>往来单位</label><select id="o_partner">${partnerOpts}</select></div>` : ''}
     <div class="field"><label>备注</label><input id="o_remark"></div>
     <div id="o_items"></div>
     <button class="btn btn-sm" onclick="addItemRow()">+ 添加明细</button>
-    <div class="toolbar"><span class="grow"></span><button class="btn" onclick="closeModal()">取消</button><button class="btn btn-primary" onclick="saveOrder('${kind}', '${type}')">保存草稿</button></div>`);
+    <div class="toolbar"><span class="grow"></span><button class="btn" onclick="closeModal()">取消</button><button class="btn btn-primary" onclick="saveOrder('${kind}', '${type}')">保存草稿</button></div>`, modalCls);
   addItemRow();
 };
 window.addItemRow = function () {

@@ -235,7 +235,7 @@ td .material-symbols-outlined { font-size: 16px; }
 .row { display: flex; gap: 10px; }
 .row > * { flex: 1; }
 .item-row { display: flex; gap: 8px; margin-bottom: 8px; align-items: center; }
-.item-row select, .item-row input { flex: 1; padding: 6px 8px; background: var(--surface-low); color: var(--text); border: 1px solid var(--outline-variant); border-radius: 4px; }
+.item-row select, .item-row input { flex: 1 1 auto; min-width: 0; padding: 6px 8px; background: var(--surface-low); color: var(--text); border: 1px solid var(--outline-variant); border-radius: 4px; }
 .item-row select:focus, .item-row input:focus { outline: none; border-color: var(--secondary); }
 .msg { padding: 8px 12px; border-radius: 4px; margin-bottom: 12px; font-size: 13px; }
 .msg-err { background: rgba(255, 68, 68, 0.12); color: var(--error); border: 1px solid rgba(255, 68, 68, 0.3); }
@@ -252,12 +252,14 @@ td .material-symbols-outlined { font-size: 16px; }
 .tabs .tab.active { background: var(--primary); border-color: var(--primary); color: var(--on-primary); font-weight: 700; box-shadow: 0 0 14px rgba(255, 45, 120, 0.4); }
 
 /* 原料批次明细行（多字段栅格） */
-.item-row.raw { flex-wrap: wrap; }
-.item-row.raw select { flex: 1 1 120px; }
-.item-row.raw .mn { flex: 1 1 120px; }
-.item-row.raw .code-preview { color: var(--text-3); font-size: 12px; white-space: nowrap; padding: 0 6px; align-self: center; }
-.item-row.raw input[type="date"] { flex: 0 0 132px; }
-.item-row.raw .u, .item-row.raw .q, .item-row.raw .p { flex: 0 0 72px; }
+.item-row.raw { flex-wrap: nowrap; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
+.item-row.raw select.cat { flex: 0 0 124px; min-width: 124px; }
+.item-row.raw .mn { flex: 0 0 120px; min-width: 120px; }
+.item-row.raw .code-preview { flex: 0 0 52px; min-width: 52px; color: var(--text-3); font-size: 11px; line-height: 1.25; text-align: center; white-space: normal; padding: 0 2px; align-self: center; }
+.item-row.raw input[type="date"] { flex: 0 0 114px; min-width: 114px; }
+.item-row.raw .u { flex: 0 0 56px; min-width: 56px; }
+.item-row.raw .q, .item-row.raw .p { flex: 0 0 62px; min-width: 62px; }
+.item-row.raw .btn-danger { flex: 0 0 32px; min-width: 32px; padding: 6px 0; text-align: center; }
 
 /* ===== 发票管理 ===== */
 .modal.wide { width: 920px; max-width: 94vw; }
