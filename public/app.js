@@ -88,12 +88,13 @@ const MENU = [
   ] },
 ];
 
+const NAV_ICONS = { dashboard: 'dashboard', categories: 'database', partners: 'group', stock: 'inventory_2', flow: 'receipt_long', invoices: 'payments', 'in-purchase': 'login', 'in-finish': 'inventory', 'out-pick': 'logout', 'out-sale': 'local_shipping' };
 function renderSidebar() {
   const role = state.user.role;
   const el = document.getElementById('sidebar');
   el.innerHTML = MENU.map((g) => {
     const items = g.items.filter((i) => i.roles.includes(role)).map((i) =>
-      `<a data-id="${i.id}" onclick="navigate('${i.id}')">${i.label}</a>`
+      `<a data-id="${i.id}" onclick="navigate('${i.id}')"><span class="material-symbols-outlined nav-icon">${NAV_ICONS[i.id] || 'circle'}</span>${i.label}</a>`
     ).join('');
     return `<div class="group-title">${g.group}</div>${items}`;
   }).join('');
@@ -433,9 +434,9 @@ async function renderStock(view) {
     ? finished.map((s) => `<tr><td>${esc(s.code)}</td><td>${esc(s.name)}</td><td>${esc(s.spec || '-')}</td><td>${s.type === 'raw' ? '原料' : '成品'}</td><td>${esc(s.unit)}</td><td>${fmt(s.qty)}</td><td>${fmt(s.amount)}</td><td>${fmt(s.safety_stock)}</td><td>${s.low_stock ? '<span class="tag tag-low">低于安全库存</span>' : '-'}</td></tr>`).join('')
     : '<tr><td colspan="9" style="color:var(--text-3)">暂无成品库存</td></tr>';
   view.innerHTML = `
-    <div class="card" style="padding:0;margin-bottom:16px"><h3 style="margin:0 0 8px;padding:12px 14px 0">原料库存（按批次）</h3>
+    <div class="card neon-border-cyan" style="padding:0;margin-bottom:16px"><h3 style="margin:0 0 8px;padding:12px 14px 0">原料库存（按批次）</h3>
       <table><thead><tr><th>编号</th><th>名称</th><th>大类</th><th>单位</th><th>数量</th><th>金额</th><th>效期(生产/有效)</th></tr></thead><tbody>${rawRows}</tbody></table></div>
-    <div class="card" style="padding:0"><h3 style="margin:0 0 8px;padding:12px 14px 0">成品库存</h3>
+    <div class="card neon-border-pink" style="padding:0"><h3 style="margin:0 0 8px;padding:12px 14px 0">成品库存</h3>
       <table><thead><tr><th>编码</th><th>名称</th><th>规格</th><th>类型</th><th>单位</th><th>数量</th><th>金额</th><th>安全库存</th><th>预警</th></tr></thead><tbody>${finRows}</tbody></table></div>`;
 }
 async function renderFlow(view) {
