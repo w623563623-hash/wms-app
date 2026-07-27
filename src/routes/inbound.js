@@ -152,6 +152,8 @@ router.post('/:id/submit', requireRole('inout', 'admin'), async (req, res) => {
       if (!orders.length) return res.status(404).json({ error: '单据不存在' });
       const order = orders[0];
       if (order.status !== 'draft') return res.status(400).json({ error: '仅草稿单可提交' });
+      // 先置 pending，复用既有审核入账事务（其内部 pending -> done 并变动库存）
+      await pool.query("UPDATE inbound_order SET status = 'pending' WHERE id = ? AND status = 'draft'", [order.id]);
       const [items] = await pool.query('SELECT * FROM inbound_item WHERE order_id = ?', [order.id]);
       await applyInboundAudit(order, items, { id: req.user.sub, real_name: req.user.real_name });
       return res.json({ ok: true, status: 'done', auditSkipped: true });
