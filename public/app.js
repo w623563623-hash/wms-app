@@ -1,6 +1,6 @@
 // ===== 云仓储 WMS 前端（原生 JS，调用真实后端 API）=====
 
-const state = { token: localStorage.getItem('wms_token'), user: null };
+const state = { token: localStorage.getItem('wms_token'), user: null, auditEnabled: true };
 
 function api(method, path, body) {
   const headers = { 'Content-Type': 'application/json' };
@@ -41,6 +41,7 @@ async function doLogin() {
     });
     state.token = data.token;
     state.user = data.user;
+    state.auditEnabled = data.auditEnabled !== false;
     localStorage.setItem('wms_token', data.token);
     showApp();
   } catch (e) {
@@ -179,7 +180,7 @@ async function renderDashboard(view) {
       <div class="box"><div class="num" style="color:var(--tertiary)">${near.length}</div><div class="lbl">临期原料批次</div></div>
       <div class="box"><div class="num">${flow.length}</div><div class="lbl">近期流水笔数</div></div>
     </div>
-    <div class="card"><b>审批链：</b> 出入库管理员制单 → 提交 → 财务审核（库存变动生效）。</div>${nearCard}`;
+    ${(state.auditEnabled ? '<div class="card"><b>审批链：</b> 出入库管理员制单 → 提交 → 财务审核（库存变动生效）。</div>' : '')}${nearCard}`;
 }
 
 // ===== 原料大类 / 成品物料（档案页）=====
@@ -200,8 +201,8 @@ async function renderCategories(view) {
       view.innerHTML = `
         ${tabBar}
         <div class="toolbar"><span class="grow"></span>${canEdit ? '<button class="btn btn-primary btn-sm" onclick="openMaterialModal()">+ 新增物料</button>' : ''}</div>
-        <div class="card" style="padding:0"><table><thead><tr><th>编码</th><th>名称</th><th>规格</th><th>类型</th><th>单位</th><th>安全库存</th><th>参考价</th></tr></thead>
-        <tbody>${list.map((m) => `<tr><td>${esc(m.code)}</td><td>${esc(m.name)}</td><td>${esc(m.spec)}</td><td>${m.type === 'raw' ? '原料' : '成品'}</td><td>${esc(m.unit)}</td><td>${fmt(m.safety_stock)}</td><td>${fmt(m.ref_price)}</td></tr>`).join('')}</tbody></table></div>`;
+        <div class="card" style="padding:0"><table><thead><tr><th>编码</th><th>名称</th><th>规格</th><th>类型</th><th>单位</th><th>安全库存</th><th>参考价</th>${canEdit ? '<th>操作</th>' : ''}</tr></thead>
+        <tbody>${list.length ? list.map((m) => `<tr><td>${esc(m.code)}</td><td>${esc(m.name)}</td><td>${esc(m.spec)}</td><td>${m.type === 'raw' ? '原料' : '成品'}</td><td>${esc(m.unit)}</td><td>${fmt(m.safety_stock)}</td><td>${fmt(m.ref_price)}</td>${canEdit ? `<td><button class="btn btn-sm btn-danger" onclick="deleteMaterial(${m.id})">删除</button></td>` : ''}</tr>`).join('') : `<tr><td colspan="${canEdit ? 8 : 7}" style="color:var(--text-3)">暂无物料，点击右上角新增（编码将自动生成）</td></tr>`}</tbody></table></div>`;
     }
   };
   window.switchCatTab = async function (t) { window._catTab = t; tab = t; await draw(); };
@@ -226,7 +227,7 @@ window.deleteCategory = async function (id) {
 };
 window.openMaterialModal = async function () {
   openModal(`<h3>新增物料</h3>
-    <div class="field"><label>编码</label><input id="m_code"></div>
+    <div class="field"><label>编码</label><input id="m_code" placeholder="可留空，保存后自动生成（FG0001 起）"></div>
     <div class="field"><label>名称</label><input id="m_name"></div>
     <div class="field"><label>规格</label><input id="m_spec"></div>
     <div class="row">
@@ -239,15 +240,34 @@ window.openMaterialModal = async function () {
     </div>
     <div class="toolbar"><span class="grow"></span><button class="btn" onclick="closeModal()">取消</button><button class="btn btn-primary" onclick="saveMaterial()">保存</button></div>`);
 };
+// 新增物料后刷新入库/出库弹窗内的物料下拉，并选中新物料
+window.refreshMaterialSelects = async function (newId) {
+  try {
+    const materials = await api('GET', '/materials');
+    _matOptsCache = materials.length
+      ? materials.map((m) => `<option value="${m.id}" data-unit="${esc(m.unit)}" data-price="${m.ref_price ?? 0}">${esc(m.code)} ${esc(m.name)}</option>`).join('')
+      : '';
+    document.querySelectorAll('#o_items .item-row.finished select.m').forEach((sel) => {
+      sel.innerHTML = _matOptsCache;
+      if (newId) sel.value = String(newId);
+    });
+  } catch (e) { /* 忽略刷新失败，用户可手动重开弹窗 */ }
+};
 window.saveMaterial = async function () {
   try {
-    await api('POST', '/materials', {
+    const id = await api('POST', '/materials', {
       code: val('m_code'), name: val('m_name'), spec: val('m_spec'),
       type: val('m_type'), unit: val('m_unit'),
       safety_stock: Number(val('m_safe') || 0), ref_price: val('m_price') ? Number(val('m_price')) : null,
-    });
-    closeModal(); navigate('materials');
+    }).then((d) => d.id);
+    closeModal();
+    if (window._materialOnCreated) { window._materialOnCreated(id); window._materialOnCreated = null; }
+    else navigate('materials');
   } catch (e) { modalMsg(e.message); }
+};
+window.deleteMaterial = async function (id) {
+  if (!confirm('确认删除该物料？已发生的出入库流水仍保留记录。')) return;
+  try { await api('DELETE', '/materials/' + id); navigate('categories'); } catch (e) { alert(e.message); }
 };
 
 // ===== 供应商 / 客户 =====
@@ -323,11 +343,17 @@ function orderRow(o, kind, isOutbound) {
   const partner = o.supplier_name || o.customer_name || '-';
   const role = state.user.role;
   let actions = `<button class="btn btn-sm" onclick="viewItems('${kind}', ${o.id})">明细</button>`;
-  if (o.status === 'draft' && ['admin', 'inout'].includes(role))
-    actions += ` <button class="btn btn-sm btn-primary" onclick="submitOrder('${kind}', ${o.id})">提交审核</button>`;
-  if (o.status === 'pending' && ['admin', 'finance'].includes(role)) {
-    actions += ` <button class="btn btn-sm btn-success" onclick="auditOrder('${kind}', ${o.id}, 'approve')">审核通过</button>`;
-    actions += ` <button class="btn btn-sm btn-danger" onclick="auditOrder('${kind}', ${o.id}, 'reject')">驳回</button>`;
+  if (state.auditEnabled) {
+    if (o.status === 'draft' && ['admin', 'inout'].includes(role))
+      actions += ` <button class="btn btn-sm btn-primary" onclick="submitOrder('${kind}', ${o.id})">提交审核</button>`;
+    if (o.status === 'pending' && ['admin', 'finance'].includes(role)) {
+      actions += ` <button class="btn btn-sm btn-success" onclick="auditOrder('${kind}', ${o.id}, 'approve')">审核通过</button>`;
+      actions += ` <button class="btn btn-sm btn-danger" onclick="auditOrder('${kind}', ${o.id}, 'reject')">驳回</button>`;
+    }
+  } else {
+    // 审核流程暂时关闭：草稿单直接「生效」入账
+    if (o.status === 'draft' && ['admin', 'inout'].includes(role))
+      actions += ` <button class="btn btn-sm btn-primary" onclick="submitOrder('${kind}', ${o.id})">生效</button>`;
   }
   const summary = o.items_summary || '';
   return `<tr><td>${esc(o.order_no)}</td><td>${TYPE_LABEL[o.type] || o.type}</td><td>${esc(partner)}</td><td>${fmt(o.total_qty)}</td><td>${fmt(o.total_amount)}</td><td>${statusTag(o.status)}</td><td title="${esc(summary)}">${summary ? esc(summary) : '-'}</td><td>${actions}</td></tr>`;
@@ -386,9 +412,13 @@ window.openOrderModal = async function (kind, type) {
   }
   const tip = _itemMode === 'raw-category' ? '（选大类 + 自定义原料名称，编号/批次自动生成）' : _itemMode === 'raw-batch' ? '（从已入库原料批次中选择）' : '';
   const modalCls = _itemMode === 'raw-category' ? 'wide' : '';
+  const addMatBtn = (_itemMode === 'finished' && type === 'finish')
+    ? `<div class="toolbar"><span class="grow"></span><button class="btn btn-sm" onclick="window._materialOnCreated = refreshMaterialSelects; openMaterialModal()">+ 新增物料</button></div>`
+    : '';
   openModal(`<h3>新建${TYPE_LABEL[type] || ''}单 ${tip}</h3>
     ${partnerOpts ? `<div class="field"><label>往来单位</label><select id="o_partner">${partnerOpts}</select></div>` : ''}
     <div class="field"><label>备注</label><input id="o_remark"></div>
+    ${addMatBtn}
     <div id="o_items"></div>
     <button class="btn btn-sm" onclick="addItemRow()">+ 添加明细</button>
     <div class="toolbar"><span class="grow"></span><button class="btn" onclick="closeModal()">取消</button><button class="btn btn-primary" onclick="saveOrder('${kind}', '${type}')">保存草稿</button></div>`, modalCls);
@@ -397,7 +427,7 @@ window.openOrderModal = async function (kind, type) {
 window.addItemRow = function () {
   const box = document.getElementById('o_items');
   const div = document.createElement('div');
-  div.className = 'item-row' + (_itemMode === 'raw-category' ? ' raw' : '');
+  div.className = 'item-row' + (_itemMode === 'raw-category' ? ' raw' : (_itemMode === 'finished' ? ' finished' : ''));
   if (_itemMode === 'raw-category') {
     div.innerHTML = `<select class="cat">${_catOptsCache}</select><input class="mn" placeholder="原料名称(自定义)"><span class="code-preview">编号自动生成</span><input class="pd" type="date" title="生产日期" oninput="updateExpPreview(this)"><input class="slv" type="number" placeholder="保质期" title="保质期数值" oninput="updateExpPreview(this)"><select class="slu" title="保质期单位" onchange="updateExpPreview(this)"><option value="year">年</option><option value="month" selected>月</option><option value="day">日</option></select><span class="exp-preview" title="有效期至">—</span><input class="u" placeholder="单位" style="max-width:56px"><input class="q" type="number" placeholder="数量" style="max-width:72px"><input class="p" type="number" placeholder="单价" style="max-width:72px"><button class="btn btn-sm btn-danger" onclick="this.parentNode.remove()">×</button>`;
     updateExpPreview(div.querySelector('.pd'));
@@ -924,7 +954,7 @@ window.delInvoice = async function (id) {
 
 // ===== 启动 =====
 if (state.token) {
-  api('GET', '/me').then((d) => { state.user = d.user; showApp(); })
+  api('GET', '/me').then((d) => { state.user = d.user; state.auditEnabled = d.auditEnabled !== false; showApp(); })
     .catch(() => { doLogout(); });
 } else {
   document.getElementById('login').classList.remove('hidden');

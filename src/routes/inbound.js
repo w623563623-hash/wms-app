@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { authMiddleware, requireRole } from '../auth.js';
 import { pool } from '../db.js';
+import { config } from '../config.js';
 import { genOrderNo, applyInboundAudit, computeExpiryDate } from '../service/inventory.js';
 
 const router = Router();
@@ -142,9 +143,19 @@ router.post('/', requireRole('inout', 'admin'), async (req, res) => {
   }
 });
 
-// 提交审核（draft -> pending）
+// 提交审核（draft -> pending）；审核流程关闭时提交即直接入账生效
 router.post('/:id/submit', requireRole('inout', 'admin'), async (req, res) => {
   try {
+    if (!config.auditEnabled) {
+      // 审核流程暂时关闭：提交即直接入账，库存当场变动
+      const [orders] = await pool.query('SELECT * FROM inbound_order WHERE id = ?', [req.params.id]);
+      if (!orders.length) return res.status(404).json({ error: '单据不存在' });
+      const order = orders[0];
+      if (order.status !== 'draft') return res.status(400).json({ error: '仅草稿单可提交' });
+      const [items] = await pool.query('SELECT * FROM inbound_item WHERE order_id = ?', [order.id]);
+      await applyInboundAudit(order, items, { id: req.user.sub, real_name: req.user.real_name });
+      return res.json({ ok: true, status: 'done', auditSkipped: true });
+    }
     const [result] = await pool.query(
       "UPDATE inbound_order SET status = 'pending' WHERE id = ? AND status = 'draft'",
       [req.params.id]

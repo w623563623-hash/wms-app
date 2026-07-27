@@ -11,4 +11,5 @@ RUN npm install --production
 COPY . .
 
 EXPOSE 3000
-CMD ["node", "src/server.js"]
+# 审核流程开关：默认关闭（WMS_AUDIT_ENABLED=false）；在 CloudBase 控制台将该环境变量设为 true 即可恢复审核
+CMD ["sh", "-c", "WMS_AUDIT_ENABLED=${WMS_AUDIT_ENABLED:-false} node src/server.js"]

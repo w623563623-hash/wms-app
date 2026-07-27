@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { verifyPassword, signToken, authMiddleware } from '../auth.js';
 import { pool } from '../db.js';
+import { config } from '../config.js';
 
 const router = Router();
 
@@ -22,6 +23,7 @@ router.post('/login', async (req, res) => {
         real_name: user.real_name,
         role: user.role,
       },
+      auditEnabled: config.auditEnabled,
     });
   } catch (err) {
     res.status(500).json({ error: '登录失败：' + err.message });
@@ -30,7 +32,7 @@ router.post('/login', async (req, res) => {
 
 // 当前用户信息
 router.get('/me', authMiddleware, (req, res) => {
-  res.json({ user: req.user });
+  res.json({ user: req.user, auditEnabled: config.auditEnabled });
 });
 
 export default router;

@@ -5,6 +5,8 @@ dotenv.config();
 export const config = {
   port: Number(process.env.PORT || 3000),
   jwtSecret: process.env.JWT_SECRET || 'dev-secret-change-me',
+  // 审核流程开关：默认开启；设为 false 时提交单据直接入账生效（库存当场变动），无需财务审核
+  auditEnabled: process.env.WMS_AUDIT_ENABLED !== 'false',
   db: {
     host: process.env.DB_HOST || '127.0.0.1',
     port: Number(process.env.DB_PORT || 3306),
