@@ -335,3 +335,4 @@ td .material-symbols-outlined { font-size: 16px; }
 .inv-reimb .inv-bill-input { padding: 4px 6px; min-width: 100px; background: var(--surface-low); color: var(--text); border: 1px solid var(--outline-variant); border-radius: 4px; }
 /* 报销单状态标签 */
 .tag.conf-reimb { background: rgba(0, 255, 204, 0.12); color: var(--secondary); border: 1px solid rgba(0, 255, 204, 0.3); }
+/* theme build: neon-tokyo 1785134620 */
