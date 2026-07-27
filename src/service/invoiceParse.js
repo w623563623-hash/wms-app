@@ -157,19 +157,7 @@ function mapExpenseType(text) {
 // ===== 报销单明细解析（增强：支持"报销单汇总"PDF）=====
 // 报销单文字层格式：序号 + 费用类型 + 日期(YYYY年M月D日) + 金额(2位小数) + 票据号码(15~20位)
 // 少数行因排版换行断裂，故先合并换行再整体匹配
-function mapReimbExpenseType(raw) {
-  const map = {
-    '物流': '运输费',
-    '餐饮': '业务招待费',
-    '商品': '办公费',
-    '服务': '服务费',
-    '交通': '差旅费',
-    '住宿': '差旅费',
-    '医疗': '福利费',
-    '医药': '福利费',
-  };
-  return map[raw] || null;
-}
+// 费用类型直接使用 PDF 原始文字（物流/餐饮/商品/服务/交通/住宿/医疗），不做映射转换
 
 export function extractReimbursementRows(text) {
   // 合并所有换行，修复"11\n商品\n2026年...\n1122.32..."断裂行
@@ -194,8 +182,7 @@ export function extractReimbursementRows(text) {
       : null;
     rows.push({
       seq,
-      expense_type_raw: expenseRaw,
-      expense_type: mapReimbExpenseType(expenseRaw),
+      expense_type: expenseRaw,
       invoice_date: invoiceDate,
       amount_incl_tax: amount,
       invoice_no: invoiceNo,

@@ -73,6 +73,7 @@ router.post('/', requireRole('admin', 'finance', 'inout'), async (req, res) => {
 });
 
 // 批量入账（报销单：一次传 PDF + 多行明细，循环插入）
+// 按 invoice_no 去重：已存在的跳过，返回 {inserted, skipped, ids}
 router.post('/batch', requireRole('admin', 'finance', 'inout'), async (req, res) => {
   try {
     const b = req.body || {};
@@ -81,11 +82,22 @@ router.post('/batch', requireRole('admin', 'finance', 'inout'), async (req, res)
 
     const conn = await pool.getConnection();
     const ids = [];
+    let skipped = 0;
     try {
       await conn.beginTransaction();
+      // 先查已存在的 invoice_no，构建去重集合
+      const allNos = b.rows.map((r) => r.invoice_no).filter(Boolean);
+      const [existing] = await conn.query(
+        'SELECT invoice_no FROM invoice WHERE invoice_no IN (' + allNos.map(() => '?').join(',') + ')',
+        allNos
+      );
+      const existSet = new Set(existing.map((r) => r.invoice_no));
+
       for (let i = 0; i < b.rows.length; i++) {
         const row = b.rows[i];
         if (!row.invoice_no) continue;
+        // 去重：已存在的 invoice_no 跳过
+        if (existSet.has(row.invoice_no)) { skipped++; continue; }
         // 报销单 PDF 仅存首条，避免 34 行各存 6MB（约 200MB 事务风险）；其余行 file_data 为空
         const fileData = i === 0 ? b.file : null;
         const fileName = i === 0 ? (b.fileName || null) : null;
@@ -103,7 +115,7 @@ router.post('/batch', requireRole('admin', 'finance', 'inout'), async (req, res)
             row.expense_type || null, 0, 0, Number(row.amount_incl_tax) || 0,
             row.invoice_date || null,
             fileData, fileName, 'confirmed',
-            JSON.stringify({ source: 'reimbursement' }), 'low',
+            JSON.stringify({ source: 'reimbursement' }), 'reimbursement',
             req.user.sub || req.user.id, req.user.real_name || req.user.username,
           ]
         );
@@ -114,7 +126,7 @@ router.post('/batch', requireRole('admin', 'finance', 'inout'), async (req, res)
         ids.push(r.insertId);
       }
       await conn.commit();
-      res.json({ inserted: ids.length, ids });
+      res.json({ inserted: ids.length, skipped, ids });
     } catch (err) {
       await conn.rollback();
       throw err;

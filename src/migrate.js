@@ -135,7 +135,7 @@ export async function migrate() {
       file_name VARCHAR(120) DEFAULT NULL COMMENT '原文件名',
       status VARCHAR(10) DEFAULT 'confirmed' COMMENT 'confirmed/draft',
       confidence JSON DEFAULT NULL COMMENT '各字段置信度等级记录',
-      confidence_level VARCHAR(10) DEFAULT NULL COMMENT '整体 high/medium/low',
+      confidence_level VARCHAR(20) DEFAULT NULL COMMENT '整体 high/medium/low/reimbursement',
       operator_id BIGINT DEFAULT NULL,
       operator_name VARCHAR(50) DEFAULT NULL,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,

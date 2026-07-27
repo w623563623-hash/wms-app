@@ -439,7 +439,7 @@ async function renderInvoices(view) {
   } else {
     body = `<div class="card" style="padding:0"><table><thead><tr>
         <th>发票号</th><th>类型</th><th>开票单位</th><th>种类</th><th>开票日期</th>
-        <th>金额(不含税)</th><th>税额</th><th>费用类别</th><th>往来单位</th><th>状态</th><th>操作</th>
+        <th>金额(不含税)</th><th>税额</th><th>价税合计</th><th>费用类别</th><th>往来单位</th><th>状态</th><th>操作</th>
       </tr></thead><tbody>${rows.map(invRow).join('')}</tbody></table></div>${invPager(total, f)}`;
   }
   view.innerHTML = statCards + filterBar + body;
@@ -455,7 +455,7 @@ function invRow(r) {
   return `<tr>
     <td>${esc(r.invoice_no)}</td><td>${typeTag}</td><td>${esc(r.billing_name)}</td><td>${esc(r.invoice_kind || '-')}</td>
     <td>${r.invoice_date || '-'}</td>
-    <td class="num">¥${fmtMoney(r.amount_ex_tax)}</td><td class="num">¥${fmtMoney(r.tax_amount)}</td>
+    <td class="num">¥${fmtMoney(r.amount_ex_tax)}</td><td class="num">¥${fmtMoney(r.tax_amount)}</td><td class="num">¥${fmtMoney(r.amount_incl_tax)}</td>
     <td>${esc(r.expense_type || '-')}</td><td>${esc(r.partner_name || '-')}</td>
     <td>${confBadge(lvl)}</td>
     <td><button class="btn btn-sm" onclick="viewInvoice(${r.id})">查看</button> <button class="btn btn-sm btn-danger" onclick="delInvoice(${r.id})">删除</button></td>
@@ -464,6 +464,7 @@ function invRow(r) {
 function confBadge(lv) {
   if (lv === 'high') return '<span class="tag conf-high">✓ 高置信</span>';
   if (lv === 'medium') return '<span class="tag conf-medium">! 待确认</span>';
+  if (lv === 'reimbursement') return '<span class="tag conf-reimb">📋 报销单</span>';
   return '<span class="tag conf-low">⚠ 未匹配</span>';
 }
 function invPager(total, f) {
@@ -582,55 +583,69 @@ function renderInvResult(r) {
 }
 
 // 报销单批量识别结果视图
-const EXPENSE_TYPES = ['运输费', '业务招待费', '办公费', '服务费', '差旅费', '福利费', '广告费', '物业费', '仓储费', '维修费', '软件费', '通讯费', '油费', '其他'];
+// 费用类型直接使用 PDF 原始值（物流/餐饮/商品/服务/交通/住宿/医疗），并提供手动选项
+const REIMB_EXPENSE_TYPES = ['物流', '餐饮', '商品', '服务', '交通', '住宿', '医疗', '运输费', '业务招待费', '办公费', '差旅费', '福利费', '其他'];
 function renderReimbResult(r) {
   const el = document.getElementById('inv_result');
   el.style.display = 'block';
   const rows = r.rows || [];
-  const opts = (sel) => EXPENSE_TYPES.map((t) => `<option value="${t}" ${t === sel ? 'selected' : ''}>${t}</option>`).join('');
+  const opts = (sel) => REIMB_EXPENSE_TYPES.map((t) => `<option value="${t}" ${t === sel ? 'selected' : ''}>${t}</option>`).join('');
   const body = rows.map((row) => `<tr>
       <td class="num">${row.seq}</td>
       <td><select id="exp_${row.seq}" class="inv-exp-sel">${opts(row.expense_type)}</select></td>
       <td>${row.invoice_date || '-'}</td>
       <td class="num">¥${fmtMoney(row.amount_incl_tax)}</td>
       <td class="mono">${esc(row.invoice_no)}</td>
+      <td><input id="bill_${row.seq}" class="inv-bill-input" placeholder="选填" value=""></td>
     </tr>`).join('');
   el.innerHTML = `<div class="inv-reimb">
     <div class="inv-reimb-head">
       <div><b>报销单识别成功</b> · 共 <b>${rows.length}</b> 条 · 合计 <b style="color:var(--success)">¥${fmtMoney(r.total)}</b></div>
-      <div class="sub">已自动识别费用类型，请核对后批量入账。报销单不含销售方/税额，入账后可在详情补充。</div>
+      <div class="sub">已按 PDF 原始费用类型填充。报销单不含开票单位/税额/种类，可手动补充开票单位，入账后可在详情继续完善。</div>
     </div>
     <div class="card" style="padding:0"><table><thead><tr>
-      <th style="width:48px">#</th><th>费用类型</th><th>开票日期</th><th>金额</th><th>票据号码</th>
+      <th style="width:48px">#</th><th>费用类型</th><th>开票日期</th><th>金额</th><th>票据号码</th><th>开票单位</th>
     </tr></thead><tbody>${body}</tbody></table></div>
     <div class="toolbar">
       <span class="sub">原始凭证（报销单PDF）将附在首条记录</span>
       <span class="grow"></span>
       <button class="btn" onclick="closeModal()">取消</button>
-      <button class="btn btn-primary" onclick="saveReimbBatch()">批量入账（${rows.length} 条）</button>
+      <button id="reimb_submit_btn" class="btn btn-primary" onclick="saveReimbBatch()">批量入账（${rows.length} 条）</button>
     </div>
   </div>`;
 }
 window.saveReimbBatch = async function () {
+  const btn = document.getElementById('reimb_submit_btn');
+  if (btn && btn.disabled) return; // 防重复点击
   const r = window._invResult;
   if (!r || r.mode !== 'reimbursement') return;
+  // 禁用按钮 + loading
+  if (btn) { btn.disabled = true; btn.textContent = '入账中…'; }
   const rows = (r.rows || []).map((row) => {
     const sel = document.getElementById('exp_' + row.seq);
+    const bill = document.getElementById('bill_' + row.seq);
     return {
       invoice_no: row.invoice_no,
       invoice_date: row.invoice_date,
       expense_type: sel ? sel.value : row.expense_type,
       amount_incl_tax: row.amount_incl_tax,
       invoice_type: 'purchase',
+      billing_name: bill ? bill.value.trim() : '',
     };
   });
   const body = { file: window._invFile.base64, fileName: window._invFile.name, rows };
   try {
     const res = await api('POST', '/invoices/batch', body);
     closeModal();
-    modalMsg(`已批量入账 ${res.inserted} 条`);
+    const msg = res.inserted > 0
+      ? `已批量入账 ${res.inserted} 条` + (res.skipped > 0 ? `（跳过 ${res.skipped} 条重复）` : '')
+      : `全部 ${res.skipped} 条已存在，无新增`;
+    modalMsg(msg);
     navigate('invoices');
-  } catch (e) { modalMsg(e.message); }
+  } catch (e) {
+    modalMsg(e.message);
+    if (btn) { btn.disabled = false; btn.textContent = '批量入账（' + (r.rows || []).length + ' 条）'; }
+  }
 };
 
 window.invBillingPick = function (v) {
@@ -713,24 +728,42 @@ window.viewInvoice = async function (id) {
   const cf = confCls;
   const c = r.confidence || {};
   const lvl = r.confidence_level;
+  const isReimb = (c.source === 'reimbursement') || lvl === 'reimbursement';
   const typeTxt = r.invoice_type === 'purchase' ? '进项' : r.invoice_type === 'sale' ? '销项' : '-';
+  // 报销单来源：不依赖 confidence 子对象，用统一样式渲染已有字段
+  const fCls = isReimb ? 'conf-high' : null; // 报销单字段统一用高置信样式
+  const fc = (label, value, sub) => fieldCard(label, value, fCls || 'conf-high', sub);
   openModal(`<h3>发票详情 · ${esc(r.invoice_no)}</h3>
     <div class="inv-detail ${cf(lvl)}">
       <div class="inv-pdf"><div class="sub">发票原件</div>
-        ${r.file_data ? `<button class="btn btn-sm" onclick="invDownload(${r.id})">下载原件 PDF</button>` : '<span class="sub">无原件</span>'}
+        ${r.file_data ? `<button class="btn btn-sm" onclick="invDownload(${r.id})">下载原件 PDF</button>` : '<span class="sub">无原件（报销单附件仅存首条）</span>'}
         <div class="pdf-ph">PDF<br><span class="sub">${esc(r.file_name || '')}</span></div>
       </div>
       <div class="inv-info">
-        ${fieldCard('开票单位', r.billing_name, cf((c.billing || {}).confidence || 'high'), '税号 ' + (r.billing_tax_no || '-'))}
-        ${fieldCard('发票类型', typeTxt, cf((c.invoice_type || {}).confidence))}
-        ${fieldCard('发票种类', r.invoice_kind, cf((c.invoice_kind || {}).confidence))}
-        ${fieldCard('往来单位', r.partner_name, cf((c.partner || {}).confidence))}
-        ${fieldCard('费用类型', r.expense_type, cf((c.expense_type || {}).confidence))}
-        ${fieldCard('金额(不含税)', '¥' + fmtMoney(r.amount_ex_tax), cf((c.amount_ex_tax || {}).confidence))}
-        ${fieldCard('税额', '¥' + fmtMoney(r.tax_amount), cf((c.tax_amount || {}).confidence))}
-        ${fieldCard('价税合计', '¥' + fmtMoney(r.amount_incl_tax), cf((c.amount_incl_tax || {}).confidence))}
-        ${fieldCard('开票日期', r.invoice_date, cf((c.invoice_date || {}).confidence))}
-        ${fieldCard('上传人', r.operator_name, 'conf-high')}
+        ${isReimb
+          ? fc('来源', '📋 报销单批量导入')
+          : fieldCard('开票单位', r.billing_name, cf((c.billing || {}).confidence || 'high'), '税号 ' + (r.billing_tax_no || '-'))}
+        ${isReimb
+          ? fc('开票单位', r.billing_name || '未填写（报销单不含此信息）')
+          : fieldCard('发票类型', typeTxt, cf((c.invoice_type || {}).confidence))}
+        ${isReimb
+          ? fc('发票类型', typeTxt)
+          : fieldCard('发票种类', r.invoice_kind, cf((c.invoice_kind || {}).confidence))}
+        ${isReimb
+          ? fc('发票种类', r.invoice_kind || '未填写')
+          : fieldCard('往来单位', r.partner_name, cf((c.partner || {}).confidence))}
+        ${fc('费用类型', r.expense_type)}
+        ${isReimb
+          ? fc('价税合计', '¥' + fmtMoney(r.amount_incl_tax))
+          : fieldCard('金额(不含税)', '¥' + fmtMoney(r.amount_ex_tax), null, cf((c.amount_ex_tax || {}).confidence))}
+        ${isReimb
+          ? ''
+          : fieldCard('税额', '¥' + fmtMoney(r.tax_amount), cf((c.tax_amount || {}).confidence))}
+        ${isReimb
+          ? ''
+          : fieldCard('价税合计', '¥' + fmtMoney(r.amount_incl_tax), cf((c.amount_incl_tax || {}).confidence))}
+        ${fc('开票日期', r.invoice_date)}
+        ${fc('上传人', r.operator_name)}
       </div>
     </div>
     <div class="toolbar"><span class="grow"></span>

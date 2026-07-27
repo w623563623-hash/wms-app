@@ -228,3 +228,6 @@ tr:hover td { background: #FAFBFF; }
 .inv-reimb table th, .inv-reimb table td { padding: 7px 10px; }
 .inv-reimb .inv-exp-sel { padding: 4px 6px; min-width: 120px; }
 .inv-reimb .mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; word-break: break-all; }
+.inv-reimb .inv-bill-input { padding: 4px 6px; min-width: 100px; border: 1px solid var(--border); border-radius: 4px; }
+/* 报销单状态标签 */
+.tag.conf-reimb { background: #E8F3FF; color: var(--brand); border: 1px solid #B3D9FF; }
