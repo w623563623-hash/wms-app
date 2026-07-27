@@ -55,4 +55,32 @@ router.post('/customers', requireRole('admin', 'inout'), async (req, res) => {
   }
 });
 
+// 删除供应商（软删 status=0，admin / inout）
+router.delete('/suppliers/:id', requireRole('admin', 'inout'), async (req, res) => {
+  try {
+    const [result] = await pool.query(
+      'UPDATE supplier SET status = 0 WHERE id = ? AND status = 1',
+      [req.params.id]
+    );
+    if (!result.affectedRows) return res.status(404).json({ error: '供应商不存在或已删除' });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 删除客户（软删 status=0，admin / inout）
+router.delete('/customers/:id', requireRole('admin', 'inout'), async (req, res) => {
+  try {
+    const [result] = await pool.query(
+      'UPDATE customer SET status = 0 WHERE id = ? AND status = 1',
+      [req.params.id]
+    );
+    if (!result.affectedRows) return res.status(404).json({ error: '客户不存在或已删除' });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 export default router;

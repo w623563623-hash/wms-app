@@ -16,11 +16,16 @@ function genRawMaterialCode() {
   return `RM${ymd}${rnd}`;
 }
 
-// 入库单列表（含往来单位名称）
+// 入库单列表（含往来单位名称 + 物料明细聚合）
 router.get('/', async (req, res) => {
   try {
+    await pool.query('SET SESSION group_concat_max_len = 65535');
     const [rows] = await pool.query(`
-      SELECT o.*, s.name AS supplier_name, c.name AS customer_name
+      SELECT o.*, s.name AS supplier_name, c.name AS customer_name,
+        (SELECT GROUP_CONCAT(
+           CONCAT(COALESCE(m.name, i.material_name, ''), ' ', COALESCE(m.unit, i.unit, ''), ' ×', i.qty)
+           SEPARATOR '；')
+         FROM inbound_item i LEFT JOIN material m ON i.material_id = m.id WHERE i.order_id = o.id) AS items_summary
       FROM inbound_order o
       LEFT JOIN supplier s ON o.supplier_id = s.id
       LEFT JOIN customer c ON o.customer_id = c.id

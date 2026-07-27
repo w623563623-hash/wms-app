@@ -17,13 +17,30 @@ router.get('/', async (req, res) => {
       JOIN material m ON s.material_id = m.id
       ORDER BY m.type, m.code`);
     const [raw] = await pool.query(`
-      SELECT id AS batch_id, material_code AS code, material_name AS name, NULL AS spec,
-             'raw' AS type, unit, NULL AS safety_stock,
-             qty, amount, 0 AS low_stock, 'raw' AS kind,
-             production_date, expiry_date, category_id
-      FROM raw_stock_batch
-      ORDER BY material_name, production_date`);
+      SELECT b.id AS batch_id, b.material_code AS code, b.material_name AS name, NULL AS spec,
+             'raw' AS type, b.unit, NULL AS safety_stock,
+             b.qty, b.amount, 0 AS low_stock, 'raw' AS kind,
+             b.production_date, b.expiry_date, b.category_id, cat.name AS category_name
+      FROM raw_stock_batch b
+      LEFT JOIN raw_category cat ON b.category_id = cat.id
+      ORDER BY b.material_name, b.production_date`);
     res.json([...finished, ...raw]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 有库存的原料批次（出库选批次用）
+router.get('/batches', async (req, res) => {
+  try {
+    const [rows] = await pool.query(`
+      SELECT b.id AS batch_id, b.material_code, b.material_name AS name, b.unit, b.qty, b.amount,
+             b.production_date, b.expiry_date, b.category_id, cat.name AS category_name
+      FROM raw_stock_batch b
+      LEFT JOIN raw_category cat ON b.category_id = cat.id
+      WHERE b.qty > 0
+      ORDER BY b.material_name, b.production_date`);
+    res.json(rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

@@ -145,6 +145,23 @@ export async function migrate() {
       KEY idx_deleted (is_deleted)
     ) COMMENT='发票管理(上传解析+开票单位匹配)'`);
 
+    // 8.5) outbound_item 扩展：支持原料批次出库（batch_id + 冗余字段），material_id 可空
+    if (await isNotNull(conn, 'outbound_item', 'material_id')) {
+      await conn.query(`ALTER TABLE outbound_item MODIFY material_id BIGINT NULL`);
+    }
+    const addOutCols = [
+      ['batch_id', 'BIGINT NULL'],
+      ['category_id', 'BIGINT NULL'],
+      ['material_name', 'VARCHAR(100) NULL'],
+      ['material_code', 'VARCHAR(32) NULL'],
+      ['unit', 'VARCHAR(10) NULL'],
+    ];
+    for (const [col, def] of addOutCols) {
+      if (!(await colExists(conn, 'outbound_item', col))) {
+        await conn.query(`ALTER TABLE outbound_item ADD COLUMN \`${col}\` ${def}`);
+      }
+    }
+
     // 8) 财务设置（本公司名称/税号，销项判断参考 + 上传方信息）
     await conn.query(`CREATE TABLE IF NOT EXISTS finance_setting (
       id INT PRIMARY KEY AUTO_INCREMENT,

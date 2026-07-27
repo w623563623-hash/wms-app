@@ -138,6 +138,10 @@ async function applyRawBatch(conn, order, it, auditor) {
 export async function applyOutboundAudit(order, items, auditor) {
   return transaction(async (conn) => {
     for (const it of items) {
+      if (it.batch_id) {
+        await applyRawBatchOutbound(conn, order, it, auditor);
+        continue;
+      }
       const [st] = await conn.query(
         'SELECT qty, amount FROM stock WHERE material_id = ? FOR UPDATE',
         [it.material_id]
@@ -173,4 +177,44 @@ export async function applyOutboundAudit(order, items, auditor) {
     );
     if (result.affectedRows === 0) throw new Error('单据状态已变化，审核失败');
   });
+}
+
+// 原料批次出库：按批次 id 扣减 raw_stock_batch，并写批次流水
+async function applyRawBatchOutbound(conn, order, it, auditor) {
+  const [batch] = await conn.query(
+    'SELECT * FROM raw_stock_batch WHERE id = ? FOR UPDATE',
+    [it.batch_id]
+  );
+  if (!batch.length) throw new Error(`原料批次 #${it.batch_id} 不存在或已被删除`);
+  const b = batch[0];
+  if (Number(b.qty) < Number(it.qty)) {
+    throw new Error(`原料库存不足，批次「${b.material_name}」当前库存 ${Number(b.qty)}`);
+  }
+  const changeAmt = Number(it.amount ?? it.qty * (it.unit_price ?? 0));
+  const newQty = Number(b.qty) - Number(it.qty);
+  const newAmt = Number(b.amount) - changeAmt;
+  await conn.query('UPDATE raw_stock_batch SET qty = ?, amount = ? WHERE id = ?', [
+    newQty,
+    newAmt,
+    b.id,
+  ]);
+  await conn.query(
+    `INSERT INTO raw_stock_flow
+      (order_no, biz_type, category_id, material_name, material_code, change_qty, change_amount, balance_qty, balance_amount, production_date, expiry_date, operator_id, operator_name)
+     VALUES (?, 'outbound', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      order.order_no,
+      b.category_id,
+      b.material_name,
+      b.material_code,
+      -Number(it.qty),
+      -changeAmt,
+      newQty,
+      newAmt,
+      b.production_date,
+      b.expiry_date,
+      auditor.id,
+      auditor.real_name,
+    ]
+  );
 }

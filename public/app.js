@@ -157,7 +157,7 @@ async function renderDashboard(view) {
       <div class="box"><div class="num" style="color:var(--danger)">${low}</div><div class="lbl">低于安全库存</div></div>
       <div class="box"><div class="num">${flow.length}</div><div class="lbl">近期流水笔数</div></div>
     </div>
-    <div class="card"><b>审批链：</b> 出入库管理员制单 → 提交 → 财务审核（库存变动）→ 成品出库由打包出货管理员打包确认。</div>`;
+    <div class="card"><b>审批链：</b> 出入库管理员制单 → 提交 → 财务审核（库存变动生效）。</div>`;
 }
 
 // ===== 原料大类 / 成品物料（档案页）=====
@@ -231,14 +231,51 @@ window.saveMaterial = async function () {
 // ===== 供应商 / 客户 =====
 async function renderPartners(view) {
   const [sup, cus] = await Promise.all([api('GET', '/partners/suppliers'), api('GET', '/partners/customers')]);
+  const canEdit = ['admin', 'inout'].includes(state.user.role);
+  const supRows = sup.length
+    ? sup.map((s) => `<tr><td>${esc(s.code)}</td><td>${esc(s.name)}</td><td>${esc(s.contact)}</td><td>${esc(s.phone)}</td><td>${canEdit ? `<button class="btn btn-sm btn-danger" onclick="deletePartner('supplier', ${s.id})">删除</button>` : '-'}</td></tr>`).join('')
+    : '<tr><td colspan="5" style="color:var(--text-3)">暂无供应商</td></tr>';
+  const cusRows = cus.length
+    ? cus.map((c) => `<tr><td>${esc(c.code)}</td><td>${esc(c.name)}</td><td>${esc(c.contact)}</td><td>${esc(c.phone)}</td><td>${canEdit ? `<button class="btn btn-sm btn-danger" onclick="deletePartner('customer', ${c.id})">删除</button>` : '-'}</td></tr>`).join('')
+    : '<tr><td colspan="5" style="color:var(--text-3)">暂无客户</td></tr>';
   view.innerHTML = `
-    <div class="card"><h3 style="margin-top:0">供应商</h3>
-      <table><thead><tr><th>编码</th><th>名称</th><th>联系人</th><th>电话</th></tr></thead>
-      <tbody>${sup.map((s) => `<tr><td>${esc(s.code)}</td><td>${esc(s.name)}</td><td>${esc(s.contact)}</td><td>${esc(s.phone)}</td></tr>`).join('')}</tbody></table></div>
-    <div class="card"><h3 style="margin-top:0">客户</h3>
-      <table><thead><tr><th>编码</th><th>名称</th><th>联系人</th><th>电话</th></tr></thead>
-      <tbody>${cus.map((c) => `<tr><td>${esc(c.code)}</td><td>${esc(c.name)}</td><td>${esc(c.contact)}</td><td>${esc(c.phone)}</td></tr>`).join('')}</tbody></table></div>`;
+    <div class="card"><h3 style="margin-top:0">供应商
+      ${canEdit ? `<button class="btn btn-primary btn-sm" style="float:right" onclick="openPartnerModal('supplier')">+ 新增供应商</button>` : ''}</h3>
+      <table><thead><tr><th>编码</th><th>名称</th><th>联系人</th><th>电话</th><th>操作</th></tr></thead><tbody>${supRows}</tbody></table></div>
+    <div class="card"><h3 style="margin-top:0">客户
+      ${canEdit ? `<button class="btn btn-primary btn-sm" style="float:right" onclick="openPartnerModal('customer')">+ 新增客户</button>` : ''}</h3>
+      <table><thead><tr><th>编码</th><th>名称</th><th>联系人</th><th>电话</th><th>操作</th></tr></thead><tbody>${cusRows}</tbody></table></div>`;
 }
+window.openPartnerModal = async function (type) {
+  const title = type === 'supplier' ? '供应商' : '客户';
+  openModal(`<h3>新增${title}</h3>
+    <div class="field"><label>编码</label><input id="p_code" placeholder="如：${type === 'supplier' ? 'SUP001' : 'CUS001'}"></div>
+    <div class="field"><label>名称</label><input id="p_name"></div>
+    <div class="row">
+      <div class="field"><label>联系人</label><input id="p_contact"></div>
+      <div class="field"><label>电话</label><input id="p_phone"></div>
+    </div>
+    <div class="field"><label>地址</label><input id="p_address"></div>
+    <div class="toolbar"><span class="grow"></span><button class="btn" onclick="closeModal()">取消</button><button class="btn btn-primary" onclick="savePartner('${type}')">保存</button></div>`);
+};
+window.savePartner = async function (type) {
+  const path = type === 'supplier' ? 'suppliers' : 'customers';
+  try {
+    await api('POST', '/partners/' + path, {
+      code: val('p_code'), name: val('p_name'),
+      contact: val('p_contact'), phone: val('p_phone'), address: val('p_address'),
+    });
+    closeModal(); navigate('partners');
+  } catch (e) { modalMsg(e.message); }
+};
+window.deletePartner = async function (type, id) {
+  const label = type === 'supplier' ? '供应商' : '客户';
+  if (!confirm(`确认删除该${label}？删除后将从列表中隐藏（已关联单据保留）。`)) return;
+  try {
+    await api('DELETE', `/partners/${type === 'supplier' ? 'suppliers' : 'customers'}/${id}`);
+    navigate('partners');
+  } catch (e) { alert(e.message); }
+};
 
 // ===== 单据（入库/出库通用）=====
 async function renderOrders(view, kind, types, title) {
@@ -254,7 +291,7 @@ async function renderOrders(view, kind, types, title) {
     <div class="card" style="padding:0">
       <table><thead><tr>
         <th>单据号</th><th>类型</th><th>往来单位</th><th>数量</th><th>金额</th><th>状态</th>
-        <th>打包</th><th>操作</th>
+        <th>物料明细</th><th>操作</th>
       </tr></thead><tbody>${filtered.length ? filtered.map((o) => orderRow(o, kind, isOutbound)).join('') : '<tr><td colspan="8" style="color:var(--text-3)">暂无单据</td></tr>'}</tbody></table>
     </div>`;
 }
@@ -270,10 +307,8 @@ function orderRow(o, kind, isOutbound) {
     actions += ` <button class="btn btn-sm btn-success" onclick="auditOrder('${kind}', ${o.id}, 'approve')">审核通过</button>`;
     actions += ` <button class="btn btn-sm btn-danger" onclick="auditOrder('${kind}', ${o.id}, 'reject')">驳回</button>`;
   }
-  if (isOutbound && o.type === 'sale' && o.status === 'done' && ['admin', 'packer'].includes(role) && o.pack_status !== 'packed')
-    actions += ` <button class="btn btn-sm" onclick="packOrder(${o.id})">打包确认</button>`;
-  const pack = isOutbound ? (o.pack_status === 'packed' ? `<span class="tag tag-done">已打包${o.logistics_no ? ' / ' + esc(o.logistics_no) : ''}</span>` : '<span class="tag tag-draft">未打包</span>') : '-';
-  return `<tr><td>${esc(o.order_no)}</td><td>${TYPE_LABEL[o.type] || o.type}</td><td>${esc(partner)}</td><td>${fmt(o.total_qty)}</td><td>${fmt(o.total_amount)}</td><td>${statusTag(o.status)}</td><td>${pack}</td><td>${actions}</td></tr>`;
+  const summary = o.items_summary || '';
+  return `<tr><td>${esc(o.order_no)}</td><td>${TYPE_LABEL[o.type] || o.type}</td><td>${esc(partner)}</td><td>${fmt(o.total_qty)}</td><td>${fmt(o.total_amount)}</td><td>${statusTag(o.status)}</td><td title="${esc(summary)}">${summary ? esc(summary) : '-'}</td><td>${actions}</td></tr>`;
 }
 
 window.viewItems = async function (kind, id) {
@@ -292,33 +327,42 @@ window.auditOrder = async function (kind, id, action) {
   await api('POST', `/${kind}/${id}/audit`, { action });
   navigate(_curView);
 };
-window.packOrder = async function (id) {
-  const no = prompt('请输入物流单号（可留空）：');
-  await api('POST', `/outbound/${id}/pack`, { logistics_no: no || '' });
-  navigate(_curView);
-};
-
 function currentView() { return _curView; }
 
 // 新建单据弹窗
 let _matOptsCache = '';
 let _catOptsCache = '';
-let _rawMode = false;
+let _batchOptsCache = '';
+let _itemMode = 'finished';
 window.openOrderModal = async function (kind, type) {
-  _rawMode = type === 'purchase';
+  if (kind === 'inbound' && type === 'purchase') _itemMode = 'raw-category';
+  else if (kind === 'outbound' && type === 'pick') _itemMode = 'raw-batch';
+  else _itemMode = 'finished';
   let partnerOpts = '';
   if (type === 'purchase' || type === 'prod_return') { const s = await api('GET', '/partners/suppliers'); partnerOpts = s.map((x) => `<option value="${x.id}">${esc(x.name)}</option>`).join(''); }
   if (type === 'sale' || type === 'pick') { const c = await api('GET', '/partners/customers'); partnerOpts = c.map((x) => `<option value="${x.id}">${esc(x.name)}</option>`).join(''); }
-  if (_rawMode) {
+  if (_itemMode === 'raw-category') {
     const cats = await api('GET', '/categories');
     _catOptsCache = cats.length
       ? cats.map((c) => `<option value="${c.id}">${esc(c.code)} ${esc(c.name)}</option>`).join('')
       : '<option value="" disabled>请先在「原料大类」中维护</option>';
+  } else if (_itemMode === 'raw-batch') {
+    const batches = await api('GET', '/stock/batches');
+    _batchOptsCache = batches.length
+      ? batches.map((b) => `<option value="${b.batch_id}" data-unit="${esc(b.unit || '')}" data-name="${esc(b.name)}" data-code="${esc(b.material_code || '')}">${esc(b.name)}（${esc(b.category_name || '未分类')}｜库存 ${fmt(b.qty)} ${esc(b.unit || '')}）</option>`).join('')
+      : '<option value="" disabled>暂无有库存的原料批次，请先入库原料</option>';
   } else {
     const materials = await api('GET', '/materials');
-    _matOptsCache = materials.map((m) => `<option value="${m.id}" data-unit="${esc(m.unit)}" data-price="${m.ref_price ?? 0}">${esc(m.code)} ${esc(m.name)}</option>`).join('');
+    let stockMap = {};
+    if (kind === 'outbound') {
+      const stk = await api('GET', '/stock');
+      stk.filter((s) => s.kind !== 'raw').forEach((s) => { stockMap[s.material_id] = s.qty; });
+    }
+    _matOptsCache = materials.length
+      ? materials.map((m) => `<option value="${m.id}" data-unit="${esc(m.unit)}" data-price="${m.ref_price ?? 0}">${esc(m.code)} ${esc(m.name)}${kind === 'outbound' ? `（库存 ${fmt(stockMap[m.id] ?? 0)} ${esc(m.unit)}）` : ''}</option>`).join('')
+      : '<option value="" disabled selected>暂无物料，请先在「成品物料」中维护</option>';
   }
-  const tip = _rawMode ? '（选大类 + 自定义原料名称，编号/批次自动生成）' : '';
+  const tip = _itemMode === 'raw-category' ? '（选大类 + 自定义原料名称，编号/批次自动生成）' : _itemMode === 'raw-batch' ? '（从已入库原料批次中选择）' : '';
   openModal(`<h3>新建${TYPE_LABEL[type] || ''}单 ${tip}</h3>
     ${partnerOpts ? `<div class="field"><label>往来单位</label><select id="o_partner">${partnerOpts}</select></div>` : ''}
     <div class="field"><label>备注</label><input id="o_remark"></div>
@@ -330,9 +374,11 @@ window.openOrderModal = async function (kind, type) {
 window.addItemRow = function () {
   const box = document.getElementById('o_items');
   const div = document.createElement('div');
-  div.className = 'item-row' + (_rawMode ? ' raw' : '');
-  if (_rawMode) {
+  div.className = 'item-row';
+  if (_itemMode === 'raw-category') {
     div.innerHTML = `<select class="cat">${_catOptsCache}</select><input class="mn" placeholder="原料名称(自定义)"><span class="code-preview">编号自动生成</span><input class="pd" type="date" title="生产日期"><input class="ed" type="date" title="有效期"><input class="u" placeholder="单位" style="max-width:64px"><input class="q" type="number" placeholder="数量" style="max-width:72px"><input class="p" type="number" placeholder="单价" style="max-width:72px"><button class="btn btn-sm btn-danger" onclick="this.parentNode.remove()">×</button>`;
+  } else if (_itemMode === 'raw-batch') {
+    div.innerHTML = `<select class="b">${_batchOptsCache || '<option value="" disabled selected>暂无有库存批次</option>'}</select><input class="q" type="number" placeholder="数量" style="max-width:90px"><input class="p" type="number" placeholder="单价" style="max-width:90px"><button class="btn btn-sm btn-danger" onclick="this.parentNode.remove()">×</button>`;
   } else {
     div.innerHTML = `<select class="m">${_matOptsCache || '<option value="" disabled selected>暂无物料，请先在「成品物料」中维护</option>'}</select><input class="q" type="number" placeholder="数量" style="max-width:90px"><input class="p" type="number" placeholder="单价" style="max-width:90px"><button class="btn btn-sm btn-danger" onclick="this.parentNode.remove()">×</button>`;
   }
@@ -341,7 +387,7 @@ window.addItemRow = function () {
 window.saveOrder = async function (kind, type) {
   const rows = [...document.querySelectorAll('#o_items .item-row')];
   let items;
-  if (_rawMode) {
+  if (_itemMode === 'raw-category') {
     items = rows.map((r) => ({
       category_id: Number(r.querySelector('.cat').value),
       material_name: r.querySelector('.mn').value.trim(),
@@ -351,6 +397,11 @@ window.saveOrder = async function (kind, type) {
       qty: Number(r.querySelector('.q').value),
       unit_price: Number(r.querySelector('.p').value || 0),
     })).filter((i) => i.category_id && i.material_name && i.qty > 0);
+  } else if (_itemMode === 'raw-batch') {
+    items = rows.map((r) => {
+      const sel = r.querySelector('.b');
+      return { batch_id: Number(sel.value), qty: Number(r.querySelector('.q').value), unit_price: Number(r.querySelector('.p').value || 0) };
+    }).filter((i) => i.batch_id && i.qty > 0);
   } else {
     items = rows.map((r) => {
       const sel = r.querySelector('.m');
@@ -358,7 +409,7 @@ window.saveOrder = async function (kind, type) {
       return { material_id: Number(sel.value), qty: Number(r.querySelector('.q').value), unit_price: Number(r.querySelector('.p').value || opt.dataset.price || 0) };
     }).filter((i) => i.material_id && i.qty > 0);
   }
-  if (!items.length) return modalMsg('请至少添加一条有效明细（原料需选大类并填名称）');
+  if (!items.length) return modalMsg('请至少添加一条有效明细');
   const body = { type, items, remark: val('o_remark') || '' };
   if (document.getElementById('o_partner')) {
     if (type === 'purchase' || type === 'prod_return') body.supplier_id = Number(val('o_partner'));
@@ -373,8 +424,19 @@ window.saveOrder = async function (kind, type) {
 // ===== 库存 / 流水 =====
 async function renderStock(view) {
   const list = await api('GET', '/stock');
-  view.innerHTML = `<div class="card" style="padding:0"><table><thead><tr><th>编码</th><th>名称</th><th>类型</th><th>单位</th><th>当前库存</th><th>金额</th><th>安全库存</th><th>效期(生产/有效)</th><th>预警</th></tr></thead>
-    <tbody>${list.map((s) => `<tr><td>${esc(s.code)}</td><td>${esc(s.name)}</td><td>${s.kind === 'raw' ? '原料(批次)' : (s.type === 'raw' ? '原料' : '成品')}</td><td>${esc(s.unit)}</td><td>${fmt(s.qty)}</td><td>${fmt(s.amount)}</td><td>${s.kind === 'raw' ? '-' : fmt(s.safety_stock)}</td><td>${s.kind === 'raw' ? `${s.production_date || '-'} / ${s.expiry_date || '-'}` : '-'}</td><td>${s.low_stock ? '<span class="tag tag-low">低于安全库存</span>' : '-'}</td></tr>`).join('')}</tbody></table></div>`;
+  const raw = list.filter((s) => s.kind === 'raw');
+  const finished = list.filter((s) => s.kind !== 'raw');
+  const rawRows = raw.length
+    ? raw.map((s) => `<tr><td>${esc(s.code || '-')}</td><td>${esc(s.name)}</td><td>${esc(s.category_name || '未分类')}</td><td>${esc(s.unit)}</td><td>${fmt(s.qty)}</td><td>${fmt(s.amount)}</td><td>${s.production_date || '-'} / ${s.expiry_date || '-'}</td></tr>`).join('')
+    : '<tr><td colspan="7" style="color:var(--text-3)">暂无原料批次库存</td></tr>';
+  const finRows = finished.length
+    ? finished.map((s) => `<tr><td>${esc(s.code)}</td><td>${esc(s.name)}</td><td>${esc(s.spec || '-')}</td><td>${s.type === 'raw' ? '原料' : '成品'}</td><td>${esc(s.unit)}</td><td>${fmt(s.qty)}</td><td>${fmt(s.amount)}</td><td>${fmt(s.safety_stock)}</td><td>${s.low_stock ? '<span class="tag tag-low">低于安全库存</span>' : '-'}</td></tr>`).join('')
+    : '<tr><td colspan="9" style="color:var(--text-3)">暂无成品库存</td></tr>';
+  view.innerHTML = `
+    <div class="card" style="padding:0;margin-bottom:16px"><h3 style="margin:0 0 8px;padding:12px 14px 0">原料库存（按批次）</h3>
+      <table><thead><tr><th>编号</th><th>名称</th><th>大类</th><th>单位</th><th>数量</th><th>金额</th><th>效期(生产/有效)</th></tr></thead><tbody>${rawRows}</tbody></table></div>
+    <div class="card" style="padding:0"><h3 style="margin:0 0 8px;padding:12px 14px 0">成品库存</h3>
+      <table><thead><tr><th>编码</th><th>名称</th><th>规格</th><th>类型</th><th>单位</th><th>数量</th><th>金额</th><th>安全库存</th><th>预警</th></tr></thead><tbody>${finRows}</tbody></table></div>`;
 }
 async function renderFlow(view) {
   const list = await api('GET', '/stock/flow');

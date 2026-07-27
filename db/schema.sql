@@ -160,14 +160,19 @@ CREATE TABLE IF NOT EXISTS `outbound_item` (
   `id` BIGINT PRIMARY KEY AUTO_INCREMENT,
   `_openid` VARCHAR(64) DEFAULT '' NOT NULL,
   `order_id` BIGINT NOT NULL,
-  `material_id` BIGINT NOT NULL,
+  `material_id` BIGINT DEFAULT NULL COMMENT '成品物料(原料出库时为空)',
+  `batch_id` BIGINT DEFAULT NULL COMMENT '原料批次ID(原料出库时)',
+  `category_id` BIGINT DEFAULT NULL COMMENT '原料大类(冗余)',
+  `material_name` VARCHAR(100) DEFAULT NULL COMMENT '原料/成品名称(冗余)',
+  `material_code` VARCHAR(32) DEFAULT NULL COMMENT '原料编号/成品编码(冗余)',
+  `unit` VARCHAR(10) DEFAULT NULL COMMENT '单位(冗余)',
   `qty` DECIMAL(18,3) NOT NULL,
   `unit_price` DECIMAL(18,2) DEFAULT 0,
   `amount` DECIMAL(18,2) DEFAULT 0,
   `remark` VARCHAR(255) DEFAULT NULL,
   CONSTRAINT `fk_out_item_order` FOREIGN KEY (`order_id`) REFERENCES `outbound_order`(`id`),
   CONSTRAINT `fk_out_item_material` FOREIGN KEY (`material_id`) REFERENCES `material`(`id`)
-) COMMENT='出库单明细';
+) COMMENT='出库单明细(原料批次+成品物料)';
 
 -- ===== 原料大类 / 原料批次（2026-07 新增）=====
 CREATE TABLE IF NOT EXISTS `raw_category` (

@@ -6,11 +6,16 @@ import { genOrderNo, applyOutboundAudit } from '../service/inventory.js';
 const router = Router();
 router.use(authMiddleware);
 
-// 出库单列表
+// 出库单列表（含往来单位名称 + 物料明细聚合）
 router.get('/', async (req, res) => {
   try {
+    await pool.query('SET SESSION group_concat_max_len = 65535');
     const [rows] = await pool.query(`
-      SELECT o.*, c.name AS customer_name, s.name AS supplier_name
+      SELECT o.*, c.name AS customer_name, s.name AS supplier_name,
+        (SELECT GROUP_CONCAT(
+           CONCAT(COALESCE(m.name, i.material_name, ''), ' ', COALESCE(m.unit, i.unit, ''), ' ×', i.qty)
+           SEPARATOR '；')
+         FROM outbound_item i LEFT JOIN material m ON i.material_id = m.id WHERE i.order_id = o.id) AS items_summary
       FROM outbound_order o
       LEFT JOIN customer c ON o.customer_id = c.id
       LEFT JOIN supplier s ON o.supplier_id = s.id
@@ -21,12 +26,19 @@ router.get('/', async (req, res) => {
   }
 });
 
-// 出库单明细
+// 出库单明细（兼容原料批次与成品物料）
 router.get('/:id/items', async (req, res) => {
   try {
     const [rows] = await pool.query(
-      `SELECT i.*, m.name AS material_name, m.code AS material_code, m.unit
-       FROM outbound_item i JOIN material m ON i.material_id = m.id
+      `SELECT i.*,
+              COALESCE(m.name, i.material_name) AS material_name,
+              COALESCE(m.code, i.material_code) AS material_code,
+              COALESCE(m.unit, i.unit) AS unit,
+              b.category_id AS batch_category_id, cat.name AS category_name
+       FROM outbound_item i
+       LEFT JOIN material m ON i.material_id = m.id
+       LEFT JOIN raw_stock_batch b ON i.batch_id = b.id
+       LEFT JOIN raw_category cat ON b.category_id = cat.id
        WHERE i.order_id = ?`,
       [req.params.id]
     );
@@ -71,11 +83,34 @@ router.post('/', requireRole('inout', 'admin'), async (req, res) => {
       ]
     );
     for (const it of items) {
-      await conn.query(
-        `INSERT INTO outbound_item (order_id, material_id, qty, unit_price, amount, remark)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-        [r.insertId, it.material_id, it.qty, it.unit_price, it.amount, it.remark || null]
-      );
+      if (it.batch_id) {
+        // 原料批次出库：冗余名称/编号/单位/大类，审核时按批次扣减
+        const [batches] = await conn.query(
+          'SELECT material_name, material_code, unit, category_id FROM raw_stock_batch WHERE id = ?',
+          [it.batch_id]
+        );
+        if (!batches.length) {
+          await conn.rollback();
+          return res.status(400).json({ error: '原料批次不存在或已被删除' });
+        }
+        const b = batches[0];
+        await conn.query(
+          `INSERT INTO outbound_item (order_id, batch_id, category_id, material_name, material_code, unit, qty, unit_price, amount, remark)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [r.insertId, it.batch_id, b.category_id, b.material_name, b.material_code, b.unit, it.qty, it.unit_price, it.amount, it.remark || null]
+        );
+      } else {
+        // 成品出库：沿用 material_id
+        if (!it.material_id) {
+          await conn.rollback();
+          return res.status(400).json({ error: '出库明细需选择成品物料或原料批次' });
+        }
+        await conn.query(
+          `INSERT INTO outbound_item (order_id, material_id, qty, unit_price, amount, remark)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+          [r.insertId, it.material_id, it.qty, it.unit_price, it.amount, it.remark || null]
+        );
+      }
     }
     await conn.commit();
     res.json({ id: r.insertId, order_no: orderNo });
@@ -122,25 +157,6 @@ router.post('/:id/audit', requireRole('finance', 'admin'), async (req, res) => {
     const [items] = await pool.query('SELECT * FROM outbound_item WHERE order_id = ?', [order.id]);
     await applyOutboundAudit(order, items, { id: req.user.sub, real_name: req.user.real_name });
     res.json({ ok: true, status: 'done' });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// 打包确认（仅成品出库 sale，且已审核；packer / admin）
-router.post('/:id/pack', requireRole('packer', 'admin'), async (req, res) => {
-  try {
-    const { logistics_no } = req.body || {};
-    const [orders] = await pool.query('SELECT * FROM outbound_order WHERE id = ?', [req.params.id]);
-    if (!orders.length) return res.status(404).json({ error: '单据不存在' });
-    const order = orders[0];
-    if (order.type !== 'sale') return res.status(400).json({ error: '仅成品出库(sale)需要打包确认' });
-    if (order.status !== 'done') return res.status(400).json({ error: '仅已审核单据可打包' });
-    await pool.query(
-      "UPDATE outbound_order SET pack_status = 'packed', packer_id = ?, packed_at = NOW(), logistics_no = ? WHERE id = ?",
-      [req.user.sub, logistics_no || null, order.id]
-    );
-    res.json({ ok: true, pack_status: 'packed' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
