@@ -101,6 +101,58 @@ export async function migrate() {
       );
     }
 
+    // 6) 供应商/客户补充「税号」列（开票单位精确匹配用）
+    for (const t of ['supplier', 'customer']) {
+      if (!(await colExists(conn, t, 'tax_no'))) {
+        await conn.query(`ALTER TABLE \`${t}\` ADD COLUMN tax_no VARCHAR(30) NULL COMMENT '纳税人识别号/统一社会信用代码'`);
+      }
+    }
+
+    // 7) 发票表（上传解析 + 开票单位匹配）
+    // 兼容旧版发票表（字段结构不兼容，且无 is_deleted 列）：检测到旧结构则重建
+    const [invOk] = await conn.query(
+      `SELECT 1 FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'invoice' AND column_name = 'is_deleted' LIMIT 1`
+    );
+    if (invOk.length === 0) {
+      await conn.query('DROP TABLE IF EXISTS invoice');
+    }
+    await conn.query(`CREATE TABLE IF NOT EXISTS invoice (
+      id BIGINT PRIMARY KEY AUTO_INCREMENT,
+      invoice_no VARCHAR(30) DEFAULT NULL COMMENT '发票号码',
+      invoice_type VARCHAR(10) DEFAULT NULL COMMENT 'purchase=进项/sale=销项',
+      invoice_kind VARCHAR(30) DEFAULT NULL COMMENT '发票种类(专票/普票/数电票/机动车...)',
+      billing_name VARCHAR(120) DEFAULT NULL COMMENT '开票单位名称(销售方)',
+      billing_tax_no VARCHAR(30) DEFAULT NULL COMMENT '开票单位税号',
+      billing_unit_id BIGINT DEFAULT NULL COMMENT '匹配到的 partner id(supplier/customer)',
+      partner_type VARCHAR(10) DEFAULT NULL COMMENT 'supplier/customer(往来单位类型)',
+      partner_name VARCHAR(120) DEFAULT NULL COMMENT '往来单位名称',
+      expense_type VARCHAR(40) DEFAULT NULL COMMENT '费用类型',
+      amount_ex_tax DECIMAL(18,2) DEFAULT 0 COMMENT '金额(不含税)',
+      tax_amount DECIMAL(18,2) DEFAULT 0 COMMENT '税额',
+      amount_incl_tax DECIMAL(18,2) DEFAULT 0 COMMENT '价税合计',
+      invoice_date DATE DEFAULT NULL COMMENT '开票日期',
+      file_data MEDIUMTEXT COMMENT 'PDF base64 原文(预览/下载)',
+      file_name VARCHAR(120) DEFAULT NULL COMMENT '原文件名',
+      status VARCHAR(10) DEFAULT 'confirmed' COMMENT 'confirmed/draft',
+      confidence JSON DEFAULT NULL COMMENT '各字段置信度等级记录',
+      confidence_level VARCHAR(10) DEFAULT NULL COMMENT '整体 high/medium/low',
+      operator_id BIGINT DEFAULT NULL,
+      operator_name VARCHAR(50) DEFAULT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      is_deleted TINYINT DEFAULT 0,
+      KEY idx_type (invoice_type),
+      KEY idx_date (invoice_date),
+      KEY idx_deleted (is_deleted)
+    ) COMMENT='发票管理(上传解析+开票单位匹配)'`);
+
+    // 8) 财务设置（本公司名称/税号，销项判断参考 + 上传方信息）
+    await conn.query(`CREATE TABLE IF NOT EXISTS finance_setting (
+      id INT PRIMARY KEY AUTO_INCREMENT,
+      self_company_name VARCHAR(120) DEFAULT NULL COMMENT '本公司名称',
+      self_company_taxno VARCHAR(30) DEFAULT NULL COMMENT '本公司税号',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    ) COMMENT='财务设置'`);
+
     console.log('[migrate] 数据库结构已是最新');
   } finally {
     conn.release();
