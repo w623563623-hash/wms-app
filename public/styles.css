@@ -345,3 +345,16 @@ td .material-symbols-outlined { font-size: 16px; }
 /* theme build: neon-tokyo 1785134620 */
 
 /* neon theme cache-bust: 1785135176 */
+
+/* ===== 侧边栏二级分组（仓库管理下）===== */
+.sidebar .sub-group { margin: 2px 0; }
+.sidebar .sub-title {
+  padding: 10px 16px 4px 30px;
+  color: var(--text-3);
+  font-size: 10px;
+  font-family: var(--font-label);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+.sidebar .sub-group a { padding-left: 30px; }
+.sidebar .group-title .nav-icon { font-size: 18px; margin-right: 8px; vertical-align: -3px; color: var(--secondary); }

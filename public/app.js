@@ -64,24 +64,28 @@ function showApp() {
   navigate('dashboard');
 }
 
-// ===== 侧边栏（按角色）=====
+// ===== 侧边栏（按角色，两级：顶级分组 -> 子分组 -> 菜单项）=====
 const MENU = [
-  { group: '总览', items: [{ id: 'dashboard', label: '概览', roles: ['admin', 'inout', 'packer', 'finance'] }] },
-  { group: '基础数据', items: [
-    { id: 'categories', label: '原料大类', roles: ['admin', 'inout', 'packer', 'finance'] },
-    { id: 'partners', label: '供应商 / 客户', roles: ['admin', 'inout', 'packer', 'finance'] },
+  { group: '总览', items: [
+    { id: 'dashboard', label: '概览', roles: ['admin', 'inout', 'packer', 'finance'] },
   ] },
-  { group: '入库', items: [
-    { id: 'in-purchase', label: '原料入库', types: ['purchase'], kind: 'inbound', roles: ['admin', 'inout', 'packer', 'finance'] },
-    { id: 'in-finish', label: '成品入库', types: ['finish'], kind: 'inbound', roles: ['admin', 'inout', 'packer', 'finance'] },
-  ] },
-  { group: '出库', items: [
-    { id: 'out-pick', label: '原料出库', types: ['pick'], kind: 'outbound', roles: ['admin', 'inout', 'packer', 'finance'] },
-    { id: 'out-sale', label: '成品出库', types: ['sale'], kind: 'outbound', roles: ['admin', 'inout', 'packer', 'finance'] },
-  ] },
-  { group: '库存', items: [
-    { id: 'stock', label: '实时库存', roles: ['admin', 'inout', 'packer', 'finance'] },
-    { id: 'flow', label: '库存流水', roles: ['admin', 'inout', 'packer', 'finance'] },
+  { group: '仓库管理', children: [
+    { group: '基础数据', items: [
+      { id: 'categories', label: '原料大类', roles: ['admin', 'inout', 'packer', 'finance'] },
+      { id: 'partners', label: '供应商 / 客户', roles: ['admin', 'inout', 'packer', 'finance'] },
+    ] },
+    { group: '入库', items: [
+      { id: 'in-purchase', label: '原料入库', types: ['purchase'], kind: 'inbound', roles: ['admin', 'inout', 'packer', 'finance'] },
+      { id: 'in-finish', label: '成品入库', types: ['finish'], kind: 'inbound', roles: ['admin', 'inout', 'packer', 'finance'] },
+    ] },
+    { group: '出库', items: [
+      { id: 'out-pick', label: '原料出库', types: ['pick'], kind: 'outbound', roles: ['admin', 'inout', 'packer', 'finance'] },
+      { id: 'out-sale', label: '成品出库', types: ['sale'], kind: 'outbound', roles: ['admin', 'inout', 'packer', 'finance'] },
+    ] },
+    { group: '库存', items: [
+      { id: 'stock', label: '实时库存', roles: ['admin', 'inout', 'packer', 'finance'] },
+      { id: 'flow', label: '库存流水', roles: ['admin', 'inout', 'packer', 'finance'] },
+    ] },
   ] },
   { group: '财务', items: [
     { id: 'invoices', label: '发票管理', roles: ['admin', 'inout', 'packer', 'finance'] },
@@ -89,28 +93,38 @@ const MENU = [
 ];
 
 const NAV_ICONS = { dashboard: 'dashboard', categories: 'database', partners: 'group', stock: 'inventory_2', flow: 'receipt_long', invoices: 'payments', 'in-purchase': 'login', 'in-finish': 'inventory', 'out-pick': 'logout', 'out-sale': 'local_shipping' };
+const GROUP_ICONS = { '总览': 'dashboard', '仓库管理': 'warehouse', '财务': 'payments' };
 function renderSidebar() {
   const role = state.user.role;
   const el = document.getElementById('sidebar');
-  el.innerHTML = MENU.map((g) => {
-    const items = g.items.filter((i) => i.roles.includes(role)).map((i) =>
-      `<a data-id="${i.id}" onclick="navigate('${i.id}')"><span class="material-symbols-outlined nav-icon">${NAV_ICONS[i.id] || 'circle'}</span>${i.label}</a>`
-    ).join('');
-    return `<div class="group-title">${g.group}</div>${items}`;
-  }).join('');
+  const renderItems = (items) => items
+    .filter((i) => i.roles.includes(role))
+    .map((i) => `<a data-id="${i.id}" onclick="navigate('${i.id}')"><span class="material-symbols-outlined nav-icon">${NAV_ICONS[i.id] || 'circle'}</span>${i.label}</a>`)
+    .join('');
+  const renderGroup = (g) => {
+    const icon = GROUP_ICONS[g.group] ? `<span class="material-symbols-outlined nav-icon">${GROUP_ICONS[g.group]}</span>` : '';
+    if (g.children) {
+      const sub = g.children.map((c) =>
+        `<div class="sub-group"><div class="sub-title">${c.group}</div>${renderItems(c.items)}</div>`
+      ).join('');
+      return `<div class="group-title">${icon}${g.group}</div>${sub}`;
+    }
+    return `<div class="group-title">${icon}${g.group}</div>${renderItems(g.items)}`;
+  };
+  el.innerHTML = MENU.map(renderGroup).join('');
 }
 window.navigate = navigate;
 
 const VIEW_META = {
   dashboard: ['总览', '概览'],
-  categories: ['基础数据', '原料大类'],
-  partners: ['基础数据', '供应商 / 客户'],
-  'in-purchase': ['入库', '原料入库'],
-  'in-finish': ['入库', '成品入库'],
-  'out-pick': ['出库', '原料出库'],
-  'out-sale': ['出库', '成品出库'],
-  stock: ['库存', '实时库存'],
-  flow: ['库存', '库存流水'],
+  categories: ['仓库管理', '基础数据', '原料大类'],
+  partners: ['仓库管理', '基础数据', '供应商 / 客户'],
+  'in-purchase': ['仓库管理', '入库', '原料入库'],
+  'in-finish': ['仓库管理', '入库', '成品入库'],
+  'out-pick': ['仓库管理', '出库', '原料出库'],
+  'out-sale': ['仓库管理', '出库', '成品出库'],
+  stock: ['仓库管理', '库存', '实时库存'],
+  flow: ['仓库管理', '库存', '库存流水'],
   invoices: ['财务', '发票管理'],
 };
 
@@ -509,10 +523,11 @@ function expiryDisplay(s) {
   return s.expiry_date;
 }
 // 临期判定：剩余保质期 ≤ 总保质期 1/5（且未过期）
+// 注意：接口返回的 DATE 字段序列化为 ISO  datetime（含 T00:00:00.000Z），需先取日期部分
 function isNearExpiry(s) {
   if (!s.expiry_date || !s.shelf_life_value || !s.shelf_life_unit || !s.production_date) return false;
-  const prod = new Date(s.production_date + 'T00:00:00').getTime();
-  const exp = new Date(s.expiry_date + 'T00:00:00').getTime();
+  const prod = new Date(String(s.production_date).slice(0, 10) + 'T00:00:00').getTime();
+  const exp = new Date(String(s.expiry_date).slice(0, 10) + 'T00:00:00').getTime();
   const now = Date.now();
   const total = exp - prod;
   const remaining = exp - now;
