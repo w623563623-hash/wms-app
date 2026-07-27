@@ -257,6 +257,7 @@ td .material-symbols-outlined { font-size: 16px; }
 .item-row.raw .mn { flex: 0 0 120px; min-width: 120px; }
 .item-row.raw .code-preview { flex: 0 0 52px; min-width: 52px; color: var(--text-3); font-size: 11px; line-height: 1.25; text-align: center; white-space: normal; padding: 0 2px; align-self: center; }
 .item-row.raw input[type="date"] { flex: 0 0 114px; min-width: 114px; }
+.item-row.raw input[type="month"] { flex: 0 0 104px; min-width: 104px; }
 .item-row.raw .u { flex: 0 0 56px; min-width: 56px; }
 .item-row.raw .q, .item-row.raw .p { flex: 0 0 62px; min-width: 62px; }
 .item-row.raw .btn-danger { flex: 0 0 32px; min-width: 32px; padding: 6px 0; text-align: center; }

@@ -378,7 +378,7 @@ window.addItemRow = function () {
   const div = document.createElement('div');
   div.className = 'item-row';
   if (_itemMode === 'raw-category') {
-    div.innerHTML = `<select class="cat">${_catOptsCache}</select><input class="mn" placeholder="原料名称(自定义)"><span class="code-preview">编号自动生成</span><input class="pd" type="date" title="生产日期"><input class="ed" type="date" title="有效期"><input class="u" placeholder="单位" style="max-width:64px"><input class="q" type="number" placeholder="数量" style="max-width:72px"><input class="p" type="number" placeholder="单价" style="max-width:72px"><button class="btn btn-sm btn-danger" onclick="this.parentNode.remove()">×</button>`;
+    div.innerHTML = `<select class="cat">${_catOptsCache}</select><input class="mn" placeholder="原料名称(自定义)"><span class="code-preview">编号自动生成</span><input class="pd" type="date" title="生产日期"><input class="ed" type="month" title="有效期(年月)"><input class="u" placeholder="单位" style="max-width:64px"><input class="q" type="number" placeholder="数量" style="max-width:72px"><input class="p" type="number" placeholder="单价" style="max-width:72px"><button class="btn btn-sm btn-danger" onclick="this.parentNode.remove()">×</button>`;
   } else if (_itemMode === 'raw-batch') {
     div.innerHTML = `<select class="b">${_batchOptsCache || '<option value="" disabled selected>暂无有库存批次</option>'}</select><input class="q" type="number" placeholder="数量" style="max-width:90px"><input class="p" type="number" placeholder="单价" style="max-width:90px"><button class="btn btn-sm btn-danger" onclick="this.parentNode.remove()">×</button>`;
   } else {
