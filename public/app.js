@@ -397,7 +397,7 @@ window.openOrderModal = async function (kind, type) {
 window.addItemRow = function () {
   const box = document.getElementById('o_items');
   const div = document.createElement('div');
-  div.className = 'item-row';
+  div.className = 'item-row' + (_itemMode === 'raw-category' ? ' raw' : '');
   if (_itemMode === 'raw-category') {
     div.innerHTML = `<select class="cat">${_catOptsCache}</select><input class="mn" placeholder="原料名称(自定义)"><span class="code-preview">编号自动生成</span><input class="pd" type="date" title="生产日期" oninput="updateExpPreview(this)"><input class="slv" type="number" placeholder="保质期" title="保质期数值" oninput="updateExpPreview(this)"><select class="slu" title="保质期单位" onchange="updateExpPreview(this)"><option value="year">年</option><option value="month" selected>月</option><option value="day">日</option></select><span class="exp-preview" title="有效期至">—</span><input class="u" placeholder="单位" style="max-width:56px"><input class="q" type="number" placeholder="数量" style="max-width:72px"><input class="p" type="number" placeholder="单价" style="max-width:72px"><button class="btn btn-sm btn-danger" onclick="this.parentNode.remove()">×</button>`;
     updateExpPreview(div.querySelector('.pd'));
