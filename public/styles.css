@@ -206,6 +206,8 @@ td .material-symbols-outlined { font-size: 16px; }
 .tag-done { background: rgba(0, 255, 204, 0.12); color: var(--secondary); border-color: rgba(0, 255, 204, 0.3); }
 .tag-cancel { background: rgba(255, 68, 68, 0.12); color: var(--error); border-color: rgba(255, 68, 68, 0.3); }
 .tag-low { background: rgba(255, 68, 68, 0.12); color: var(--error); border-color: rgba(255, 68, 68, 0.3); }
+.tag-near { background: rgba(255, 224, 74, 0.16); color: var(--tertiary); border-color: rgba(255, 224, 74, 0.45); box-shadow: 0 0 8px rgba(255, 224, 74, 0.25); }
+.near-exp { background: rgba(255, 224, 74, 0.07); box-shadow: inset 3px 0 0 var(--tertiary); }
 
 /* ===== 登录（霓虹）===== */
 .login-wrap { height: 100vh; display: flex; align-items: center; justify-content: center; background-color: var(--bg); background-image: radial-gradient(circle at 1px 1px, rgba(0, 255, 204, 0.05) 1px, transparent 0); background-size: 22px 22px; }
@@ -253,14 +255,16 @@ td .material-symbols-outlined { font-size: 16px; }
 
 /* 原料批次明细行（多字段栅格） */
 .item-row.raw { flex-wrap: nowrap; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
-.item-row.raw select.cat { flex: 0 0 124px; min-width: 124px; }
-.item-row.raw .mn { flex: 0 0 120px; min-width: 120px; }
-.item-row.raw .code-preview { flex: 0 0 52px; min-width: 52px; color: var(--text-3); font-size: 11px; line-height: 1.25; text-align: center; white-space: normal; padding: 0 2px; align-self: center; }
-.item-row.raw input[type="date"] { flex: 0 0 114px; min-width: 114px; }
-.item-row.raw input[type="month"] { flex: 0 0 104px; min-width: 104px; }
-.item-row.raw .u { flex: 0 0 56px; min-width: 56px; }
-.item-row.raw .q, .item-row.raw .p { flex: 0 0 62px; min-width: 62px; }
-.item-row.raw .btn-danger { flex: 0 0 32px; min-width: 32px; padding: 6px 0; text-align: center; }
+.item-row.raw select.cat { flex: 0 0 118px; min-width: 118px; }
+.item-row.raw .mn { flex: 0 0 108px; min-width: 108px; }
+.item-row.raw .code-preview { flex: 0 0 48px; min-width: 48px; color: var(--text-3); font-size: 11px; line-height: 1.25; text-align: center; white-space: normal; padding: 0 2px; align-self: center; }
+.item-row.raw input[type="date"] { flex: 0 0 108px; min-width: 108px; }
+.item-row.raw .slv { flex: 0 0 52px; min-width: 52px; }
+.item-row.raw .slu { flex: 0 0 54px; min-width: 54px; }
+.item-row.raw .exp-preview { flex: 0 0 92px; min-width: 92px; color: var(--secondary); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; align-self: center; padding: 6px 4px; border: 1px dashed var(--outline-variant); border-radius: 4px; }
+.item-row.raw .u { flex: 0 0 52px; min-width: 52px; }
+.item-row.raw .q, .item-row.raw .p { flex: 0 0 58px; min-width: 58px; }
+.item-row.raw .btn-danger { flex: 0 0 30px; min-width: 30px; padding: 6px 0; text-align: center; }
 
 /* ===== 发票管理 ===== */
 .modal.wide { width: 920px; max-width: 94vw; }

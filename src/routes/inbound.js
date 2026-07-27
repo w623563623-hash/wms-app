@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { authMiddleware, requireRole } from '../auth.js';
 import { pool } from '../db.js';
-import { genOrderNo, applyInboundAudit } from '../service/inventory.js';
+import { genOrderNo, applyInboundAudit, computeExpiryDate } from '../service/inventory.js';
 
 const router = Router();
 router.use(authMiddleware);
@@ -98,10 +98,11 @@ router.post('/', requireRole('inout', 'admin'), async (req, res) => {
           await conn.rollback();
           return res.status(400).json({ error: '原料明细需填写大类、原料名称与数量' });
         }
+        const expiry = computeExpiryDate(it.production_date, it.shelf_life_value, it.shelf_life_unit);
         await conn.query(
           `INSERT INTO inbound_item
-            (order_id, category_id, material_name, material_code, unit, qty, unit_price, amount, production_date, expiry_date, remark)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            (order_id, category_id, material_name, material_code, unit, qty, unit_price, amount, production_date, expiry_date, shelf_life_value, shelf_life_unit, remark)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             r.insertId,
             it.category_id,
@@ -112,7 +113,9 @@ router.post('/', requireRole('inout', 'admin'), async (req, res) => {
             it.unit_price,
             it.amount,
             it.production_date || null,
-            it.expiry_date || null,
+            expiry,
+            it.shelf_life_value || null,
+            it.shelf_life_unit || null,
             it.remark || null,
           ]
         );

@@ -35,6 +35,31 @@ export function genOrderNo(prefix) {
   return `${prefix}${ymd}${rnd}`;
 }
 
+/**
+ * 由生产日期 + 保质期换算"有效期至"（本地时区，避免 UTC 偏移导致差一天）。
+ * @param {string} prod  生产日期 'YYYY-MM-DD'
+ * @param {number|string} value 保质期数值
+ * @param {'year'|'month'|'day'} unit 保质期单位
+ * @returns {string|null} 'YYYY-MM-DD' 或 null（缺参/非法）
+ */
+export function computeExpiryDate(prod, value, unit) {
+  if (!prod || !value || !unit) return null;
+  const d = new Date(prod + 'T00:00:00');
+  if (isNaN(d.getTime())) return null;
+  const v = Number(value);
+  if (isNaN(v) || v <= 0) return null;
+  let y = d.getFullYear(), m = d.getMonth(), day = d.getDate();
+  if (unit === 'year') { y += v; m = 11; day = 31; }
+  else if (unit === 'month') { m += v; }
+  else if (unit === 'day') { day += v; }
+  else return null;
+  const nd = new Date(y, m, day);
+  const yy = nd.getFullYear();
+  const mm = String(nd.getMonth() + 1).padStart(2, '0');
+  const dd = String(nd.getDate()).padStart(2, '0');
+  return `${yy}-${mm}-${dd}`;
+}
+
 // 入库审核通过：事务内更新 stock + 写 stock_flow（行锁防并发超卖）
 export async function applyInboundAudit(order, items, auditor) {
   return transaction(async (conn) => {
@@ -83,7 +108,10 @@ async function applyRawBatch(conn, order, it, auditor) {
   const changeQty = Number(it.qty);
   const changeAmount = Number(it.amount ?? it.qty * (it.unit_price ?? 0));
   const prod = it.production_date || null;
-  const exp = it.expiry_date || null;
+  // 有效期优先由保质期字段换算（服务端权威），回退用明细携带的 expiry_date
+  const exp = computeExpiryDate(it.production_date, it.shelf_life_value, it.shelf_life_unit) || it.expiry_date || null;
+  const slv = it.shelf_life_value || null;
+  const slu = it.shelf_life_unit || null;
   // 行锁定位已有批次（NULL 安全比较）
   const [existing] = await conn.query(
     `SELECT qty, amount FROM raw_stock_batch
@@ -97,8 +125,8 @@ async function applyRawBatch(conn, order, it, auditor) {
   const newAmt = prevAmt + changeAmount;
   await conn.query(
     `INSERT INTO raw_stock_batch
-      (category_id, material_name, material_code, unit, production_date, expiry_date, qty, amount, inbound_order_id, inbound_item_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (category_id, material_name, material_code, unit, production_date, expiry_date, shelf_life_value, shelf_life_unit, qty, amount, inbound_order_id, inbound_item_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON DUPLICATE KEY UPDATE qty = VALUES(qty), amount = VALUES(amount)`,
     [
       it.category_id || null,
@@ -107,6 +135,8 @@ async function applyRawBatch(conn, order, it, auditor) {
       it.unit || null,
       prod,
       exp,
+      slv,
+      slu,
       newQty,
       newAmt,
       order.id,

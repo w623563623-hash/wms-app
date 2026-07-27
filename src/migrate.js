@@ -162,6 +162,16 @@ export async function migrate() {
       }
     }
 
+    // 8.6) 原料批次 + 入库明细：保质期字段（有效期按保质期换算，可空）
+    for (const t of ['raw_stock_batch', 'inbound_item']) {
+      if (!(await colExists(conn, t, 'shelf_life_value'))) {
+        await conn.query(`ALTER TABLE \`${t}\` ADD COLUMN shelf_life_value INT NULL COMMENT '保质期数值'`);
+      }
+      if (!(await colExists(conn, t, 'shelf_life_unit'))) {
+        await conn.query(`ALTER TABLE \`${t}\` ADD COLUMN shelf_life_unit ENUM('year','month','day') NULL COMMENT '保质期单位 year/month/day'`);
+      }
+    }
+
     // 8) 财务设置（本公司名称/税号，销项判断参考 + 上传方信息）
     await conn.query(`CREATE TABLE IF NOT EXISTS finance_setting (
       id INT PRIMARY KEY AUTO_INCREMENT,

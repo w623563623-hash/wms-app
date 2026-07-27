@@ -151,14 +151,21 @@ async function renderDashboard(view) {
   ]);
   const low = stock.filter((s) => s.low_stock).length;
   const pending = [...inbound, ...outbound].filter((o) => o.status === 'pending').length;
+  const near = stock.filter((s) => s.kind === 'raw' && isNearExpiry(s));
+  const nearCard = near.length
+    ? `<div class="card" style="margin-top:12px"><h3 style="margin:0 0 8px">临期预警</h3>
+        <table><thead><tr><th>编号</th><th>名称</th><th>有效期至</th><th>状态</th></tr></thead>
+        <tbody>${near.map((s) => `<tr class="near-exp"><td>${esc(s.code || '-')}</td><td>${esc(s.name)}</td><td>${expiryDisplay(s)}</td><td><span class="tag tag-near">临期</span></td></tr>`).join('')}</tbody></table></div>`
+    : '';
   view.innerHTML = `
     <div class="kpi">
       <div class="box"><div class="num">${stock.length}</div><div class="lbl">在库物料种类</div></div>
       <div class="box"><div class="num" style="color:var(--warning)">${pending}</div><div class="lbl">待财务审核单据</div></div>
       <div class="box"><div class="num" style="color:var(--danger)">${low}</div><div class="lbl">低于安全库存</div></div>
+      <div class="box"><div class="num" style="color:var(--tertiary)">${near.length}</div><div class="lbl">临期原料批次</div></div>
       <div class="box"><div class="num">${flow.length}</div><div class="lbl">近期流水笔数</div></div>
     </div>
-    <div class="card"><b>审批链：</b> 出入库管理员制单 → 提交 → 财务审核（库存变动生效）。</div>`;
+    <div class="card"><b>审批链：</b> 出入库管理员制单 → 提交 → 财务审核（库存变动生效）。</div>${nearCard}`;
 }
 
 // ===== 原料大类 / 成品物料（档案页）=====
@@ -378,7 +385,8 @@ window.addItemRow = function () {
   const div = document.createElement('div');
   div.className = 'item-row';
   if (_itemMode === 'raw-category') {
-    div.innerHTML = `<select class="cat">${_catOptsCache}</select><input class="mn" placeholder="原料名称(自定义)"><span class="code-preview">编号自动生成</span><input class="pd" type="date" title="生产日期"><input class="ed" type="month" title="有效期(年月)"><input class="u" placeholder="单位" style="max-width:64px"><input class="q" type="number" placeholder="数量" style="max-width:72px"><input class="p" type="number" placeholder="单价" style="max-width:72px"><button class="btn btn-sm btn-danger" onclick="this.parentNode.remove()">×</button>`;
+    div.innerHTML = `<select class="cat">${_catOptsCache}</select><input class="mn" placeholder="原料名称(自定义)"><span class="code-preview">编号自动生成</span><input class="pd" type="date" title="生产日期" oninput="updateExpPreview(this)"><input class="slv" type="number" placeholder="保质期" title="保质期数值" oninput="updateExpPreview(this)"><select class="slu" title="保质期单位" onchange="updateExpPreview(this)"><option value="year">年</option><option value="month" selected>月</option><option value="day">日</option></select><span class="exp-preview" title="有效期至">—</span><input class="u" placeholder="单位" style="max-width:56px"><input class="q" type="number" placeholder="数量" style="max-width:72px"><input class="p" type="number" placeholder="单价" style="max-width:72px"><button class="btn btn-sm btn-danger" onclick="this.parentNode.remove()">×</button>`;
+    updateExpPreview(div.querySelector('.pd'));
   } else if (_itemMode === 'raw-batch') {
     div.innerHTML = `<select class="b">${_batchOptsCache || '<option value="" disabled selected>暂无有库存批次</option>'}</select><input class="q" type="number" placeholder="数量" style="max-width:90px"><input class="p" type="number" placeholder="单价" style="max-width:90px"><button class="btn btn-sm btn-danger" onclick="this.parentNode.remove()">×</button>`;
   } else {
@@ -394,7 +402,8 @@ window.saveOrder = async function (kind, type) {
       category_id: Number(r.querySelector('.cat').value),
       material_name: r.querySelector('.mn').value.trim(),
       production_date: r.querySelector('.pd').value || null,
-      expiry_date: r.querySelector('.ed').value || null,
+      shelf_life_value: r.querySelector('.slv').value ? Number(r.querySelector('.slv').value) : null,
+      shelf_life_unit: r.querySelector('.slu').value || null,
       unit: r.querySelector('.u').value.trim() || null,
       qty: Number(r.querySelector('.q').value),
       unit_price: Number(r.querySelector('.p').value || 0),
@@ -429,7 +438,11 @@ async function renderStock(view) {
   const raw = list.filter((s) => s.kind === 'raw');
   const finished = list.filter((s) => s.kind !== 'raw');
   const rawRows = raw.length
-    ? raw.map((s) => `<tr><td>${esc(s.code || '-')}</td><td>${esc(s.name)}</td><td>${esc(s.category_name || '未分类')}</td><td>${esc(s.unit)}</td><td>${fmt(s.qty)}</td><td>${fmt(s.amount)}</td><td>${s.production_date || '-'} / ${s.expiry_date || '-'}</td></tr>`).join('')
+    ? raw.map((s) => {
+        const exp = expiryDisplay(s);
+        const near = isNearExpiry(s);
+        return `<tr class="${near ? 'near-exp' : ''}"><td>${esc(s.code || '-')}</td><td>${esc(s.name)}</td><td>${esc(s.category_name || '未分类')}</td><td>${esc(s.unit)}</td><td>${fmt(s.qty)}</td><td>${fmt(s.amount)}</td><td>${s.production_date || '-'} / ${exp}${near ? ' <span class="tag tag-near">临期</span>' : ''}</td></tr>`;
+      }).join('')
     : '<tr><td colspan="7" style="color:var(--text-3)">暂无原料批次库存</td></tr>';
   const finRows = finished.length
     ? finished.map((s) => `<tr><td>${esc(s.code)}</td><td>${esc(s.name)}</td><td>${esc(s.spec || '-')}</td><td>${s.type === 'raw' ? '原料' : '成品'}</td><td>${esc(s.unit)}</td><td>${fmt(s.qty)}</td><td>${fmt(s.amount)}</td><td>${fmt(s.safety_stock)}</td><td>${s.low_stock ? '<span class="tag tag-low">低于安全库存</span>' : '-'}</td></tr>`).join('')
@@ -460,6 +473,52 @@ function modalMsg(m) {
 }
 function val(id) { const e = document.getElementById(id); return e ? e.value.trim() : ''; }
 window.closeModal = closeModal;
+
+// 有效期至预览（按单位精度显示，本地时区计算）
+function computeExpiryPreview(prod, value, unit) {
+  if (!prod || !value || !unit || Number(value) <= 0) return '—';
+  const d = new Date(prod + 'T00:00:00');
+  if (isNaN(d.getTime())) return '—';
+  const v = Number(value);
+  let y = d.getFullYear(), m = d.getMonth(), day = d.getDate();
+  if (unit === 'year') { y += v; m = 11; day = 31; }
+  else if (unit === 'month') { m += v; }
+  else if (unit === 'day') { day += v; }
+  else return '—';
+  const nd = new Date(y, m, day);
+  const yy = nd.getFullYear(), mm = String(nd.getMonth() + 1).padStart(2, '0'), dd = String(nd.getDate()).padStart(2, '0');
+  if (unit === 'year') return `${yy}`;
+  if (unit === 'month') return `${yy}-${mm}`;
+  return `${yy}-${mm}-${dd}`;
+}
+// 原料入库明细行：随生产日期/保质期变化刷新"有效期至"预览
+window.updateExpPreview = function (el) {
+  const row = el.closest('.item-row');
+  if (!row) return;
+  const pd = row.querySelector('.pd').value;
+  const slv = row.querySelector('.slv').value;
+  const slu = row.querySelector('.slu').value;
+  const prev = row.querySelector('.exp-preview');
+  if (prev) prev.textContent = computeExpiryPreview(pd, slv, slu);
+};
+// 有效期至按精度显示（年→YYYY / 月→YYYY-MM / 日→YYYY-MM-DD）
+function expiryDisplay(s) {
+  if (!s.expiry_date) return '-';
+  if (s.shelf_life_unit === 'year') return s.expiry_date.slice(0, 4);
+  if (s.shelf_life_unit === 'month') return s.expiry_date.slice(0, 7);
+  return s.expiry_date;
+}
+// 临期判定：剩余保质期 ≤ 总保质期 1/5（且未过期）
+function isNearExpiry(s) {
+  if (!s.expiry_date || !s.shelf_life_value || !s.shelf_life_unit || !s.production_date) return false;
+  const prod = new Date(s.production_date + 'T00:00:00').getTime();
+  const exp = new Date(s.expiry_date + 'T00:00:00').getTime();
+  const now = Date.now();
+  const total = exp - prod;
+  const remaining = exp - now;
+  if (total <= 0 || remaining <= 0) return false;
+  return remaining / total <= 0.2;
+}
 
 // ===== 发票管理 =====
 function fmtMoney(n) { return n == null ? '0.00' : Number(n).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }

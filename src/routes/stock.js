@@ -20,7 +20,8 @@ router.get('/', async (req, res) => {
       SELECT b.id AS batch_id, b.material_code AS code, b.material_name AS name, NULL AS spec,
              'raw' AS type, b.unit, NULL AS safety_stock,
              b.qty, b.amount, 0 AS low_stock, 'raw' AS kind,
-             b.production_date, b.expiry_date, b.category_id, cat.name AS category_name
+             b.production_date, b.expiry_date, b.shelf_life_value, b.shelf_life_unit,
+             b.category_id, cat.name AS category_name
       FROM raw_stock_batch b
       LEFT JOIN raw_category cat ON b.category_id = cat.id
       ORDER BY b.material_name, b.production_date`);
@@ -35,7 +36,8 @@ router.get('/batches', async (req, res) => {
   try {
     const [rows] = await pool.query(`
       SELECT b.id AS batch_id, b.material_code, b.material_name AS name, b.unit, b.qty, b.amount,
-             b.production_date, b.expiry_date, b.category_id, cat.name AS category_name
+             b.production_date, b.expiry_date, b.shelf_life_value, b.shelf_life_unit,
+             b.category_id, cat.name AS category_name
       FROM raw_stock_batch b
       LEFT JOIN raw_category cat ON b.category_id = cat.id
       WHERE b.qty > 0
